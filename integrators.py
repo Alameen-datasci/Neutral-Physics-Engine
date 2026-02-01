@@ -1,3 +1,10 @@
+"""
+Numerical integration methods.
+
+Implements Euler and Runge-Kutta (RK4) time-stepping
+for advancing the system state.
+"""
+
 import numpy as np
 
 def euler_step(bodies, force_fn, dt, t):

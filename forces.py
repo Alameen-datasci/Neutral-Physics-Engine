@@ -1,3 +1,10 @@
+"""
+Force models for the simulation.
+
+Currently includes gravity and mutual gravitational interaction
+between bodies.
+"""
+
 import numpy as np
 
 def forces(bodies):

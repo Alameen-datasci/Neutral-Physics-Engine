@@ -1,3 +1,11 @@
+"""
+neutral-physics-engine
+
+Entry point of the project.
+Creates bodies, runs simulations using different integrators,
+and visualizes results.
+"""
+
 from body import Body
 from forces import forces
 from integrators import euler_step, rk4_body_step

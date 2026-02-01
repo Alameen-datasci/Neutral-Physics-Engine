@@ -1,3 +1,10 @@
+"""
+Simulation controller.
+
+Manages time stepping, ground collision handling,
+data recording, and plotting of results.
+"""
+
 import numpy as np
 import matplotlib.pyplot as plt
 
