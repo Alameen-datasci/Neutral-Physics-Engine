@@ -8,6 +8,17 @@ for advancing the system state.
 import numpy as np
 
 def euler_step(bodies, force_fn, dt, t):
+    """
+    Update the body using Euler integration.
+
+    Parameters:
+        body : Body
+            Object to update
+        force_fn : function
+            Returns acceleration vector
+        dt : float
+            Time step
+    """
     accs = force_fn(bodies)
     for i, b in enumerate(bodies):
         b.vel += accs[i] * dt
