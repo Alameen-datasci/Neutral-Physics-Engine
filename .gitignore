@@ -1,8 +1,24 @@
+# Python bytecode
 __pycache__/
-*.pyc
+*.py[cod]
 *.pyo
-*.pyd
-.env
-.venv
-.vscode/
+
+# Virtual environments
+venv/
+.env/
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+
+# Jupyter
 .ipynb_checkpoints/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
