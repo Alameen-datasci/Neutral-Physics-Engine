@@ -15,9 +15,6 @@ All notable changes to the "Neutral Physics Engine" project will be documented i
 - **Integration Method:** Standardized RK4 implementation with a helper `derivative` function for cleaner state vector management.
 - **Body Definition:** Updated `Body` class to require a `radius` parameter, enabling geometric collision detection.
 
-### Fixed
-- **Ground Jitter:** Resolved resting contact instability using positional correction logic in the collision solver.
-
 ## [1.0]
 ### Added
 - Initial release of the engine.
