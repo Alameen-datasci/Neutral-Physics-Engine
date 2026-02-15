@@ -5,7 +5,7 @@ This script sets up and runs a physics simulation of a meteor falling towards Ea
 """
 from body import Body, Earth
 from forces import forces
-from integrators import rk4_body_step
+from integrators import euler_step, rk4_body_step, velocity_verlet_step
 from simulation import Simulation
 import numpy as np
 
@@ -39,7 +39,7 @@ T = 15.0
 
 sim = Simulation(
     bodies=bodies,
-    integrator=rk4_body_step,
+    integrator=velocity_verlet_step,  # You can switch to rk4_body_step or velocity_verlet_step for better accuracy
     force_fn=forces,
     dt=dt
 )

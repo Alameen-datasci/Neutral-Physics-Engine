@@ -24,14 +24,20 @@ class Body:
     def __init__(self, mass, pos, vel, radius):
         if mass <= 0:
             raise ValueError("Body mass must be positive and non-zero")
-        self.mass = mass
+        self.mass = float(mass)
 
         if radius <= 0:
             raise ValueError("Body radius must be positive")
-        self.radius = radius
+        self.radius = float(radius)
 
-        self.pos = np.array(pos, dtype=float)
-        self.vel = np.array(vel, dtype=float)
+        self.pos = np.asarray(pos, dtype=float)
+        self.vel = np.asarray(vel, dtype=float)
+
+        if self.pos.shape != (3,):
+            raise ValueError("Position must be a 3D vector of shape (3,)")
+
+        if self.vel.shape != (3,):
+            raise ValueError("Velocity must be a 3D vector of shape (3,)")
 
 class Earth(Body):
     """
