@@ -11,30 +11,31 @@ import numpy as np
 G = 6.67430e-11
 EPS = 1e-10
 
-def forces(bodies):
+def forces(masses, pos):
     """
     Compute the gravitational accelerations on each body due to all other bodies.
 
     Parameters:
     -----------
-    bodies : list of Body
-        List of Body objects in the simulation
+    masses : list of float
+        List of masses for each body in the simulation.
+    pos : np.ndarray
+        Array of shape (n, 3) containing the positions of each body.
 
     Returns:
     --------
-    list of np.ndarray
-        List of acceleration vectors for each body, where each vector is a numpy array of shape (dim,)
+    np.ndarray
+        Array of shape (n, 3) containing the acceleration vectors for each body.
     
-    The function iterates over all unique pairs of bodies, computes the gravitational force between them, and accumulates the resulting accelerations for each body.
-    It handles cases where bodies are very close to avoid singularities by using a small epsilon value.
+    The function iterates over all unique pairs of bodies, computes the gravitational force between them, and updates the acceleration for each body accordingly.
+    It also includes a check to avoid singularities when bodies are very close to each other by skipping the force calculation if the distance is below a small threshold (EPS).
     """
-    n = len(bodies)
-    dim = bodies[0].pos.shape[0]
-    accs = np.zeros((n, dim), dtype=float)
+    n = len(masses)
+    accs = np.zeros((n, 3), dtype=float)
 
     for i in range(n):
         for j in range(i+1, n):
-            r = bodies[i].pos - bodies[j].pos
+            r = pos[i] - pos[j]
             d = np.linalg.norm(r)
             # Avoid singularity and extremely large forces when bodies are very close
             if d < EPS:
@@ -42,6 +43,6 @@ def forces(bodies):
             # Compute the common factor for the gravitational force
             f_common = G / (d ** 3)
 
-            accs[i] -= f_common * bodies[j].mass * r # Acceleration on body i due to body j
-            accs[j] += f_common * bodies[i].mass * r # Acceleration on body j due to body i (equal and opposite)
+            accs[i] -= f_common * masses[j] * r # Acceleration on body i due to body j
+            accs[j] += f_common * masses[i] * r # Acceleration on body j due to body i (equal and opposite)
     return accs

@@ -13,35 +13,41 @@ import matplotlib.pyplot as plt
 
 class Simulation:
     """
-    Manages the physics simulation of a system of bodies.
+    Manages the physics simulation of multiple bodies.
 
     Parameters:
     -----------
     bodies : list of Body
-        List of Body objects in the simulation
+        List of Body objects representing the physical bodies in the simulation.
     integrator : function
-        Numerical integration function to update body states (e.g., rk4_step)
+        A function that updates the positions and velocities of the bodies based on the forces acting on them and the time step.
     force_fn : function
-        Function that computes the forces (accelerations) on the bodies
+        A function that computes the accelerations for the bodies based on their current positions and masses.
     dt : float
-        Time step for the simulation
+        Time step for the simulation (in seconds)
     restitution : float
         Coefficient of restitution for collision handling (default: 0.8)
 
-    The Simulation class provides methods to step through the simulation, run it for a specified duration, and plot the results.
-    It also handles collision resolution between bodies and tracks the kinetic, potential, and total energy of
-    the system over time.
+    The Simulation class provides methods to step through the simulation,
+    run it for a specified total time, handle collisions between bodies,
+    compute the kinetic and potential energy of the system, and generate plots of the results.
 
-    Methods:
+    methods:
     --------
-    step() : Advances the simulation by one time step, updating body states and handling collisions.
-    run(T) : Runs the simulation for a total time T, calling step() iteratively.
+    step() : Advances the simulation by one time step, updating positions and velocities, handling collisions, and recording energy and trajectory history.
+    run(T) : Runs the simulation for a total time
     plot() : Generates plots of speed vs time and energy vs time for the simulation results.
 
-    Internal Methods:
-    -----------------
-    _resolve_collision(bi, bj) : Resolves a collision between two bodies bi and bj using the coefficient of restitution and positional correction to prevent interpenetration.
+    internal methods:
+    -------------------
+    _handle_collisions() : Checks for and resolves collisions between bodies based on their positions and radii.
+    _resolve_collision(bi, bj, delta, dist) : Resolves a collision between two bodies bi and bj using the coefficient of restitution and positional correction to prevent interpenetration.
+    _compute_energy() : Computes the total kinetic and potential energy of the system at the current state.
     """
+    # Gravitational constant and small epsilon to avoid singularities
+    G = 6.67430e-11
+    EPS = 1e-10
+
     def __init__(self, bodies, integrator, force_fn, dt, restitution=0.8):
         self.bodies = bodies
         self.integrator = integrator
@@ -61,44 +67,29 @@ class Simulation:
     def step(self):
         """
         Advance the simulation by one time step.
-        This method updates the positions and velocities of all bodies using the specified integrator and force function.
-        It also computes the kinetic and potential energy of the system, handles collisions between bodies, and
-        records the trajectory and energy history for analysis and plotting.
+        This method updates the positions and velocities of the bodies using the specified integrator and force function
+        It also handles collisions between bodies, computes the kinetic and potential energy of the system, and records the trajectory and energy history for analysis and plotting.
 
-        The method iterates over all unique pairs of bodies to check for collisions and resolve them if necessary.
-        It then updates the positions and velocities of the bodies based on the computed accelerations from the force function.
-        Finally, it records the current state of the system for later visualization.
+        The method first calls the integrator to update the state of the bodies based on the forces acting on them.
+        Then it checks for collisions between bodies and resolves them using the specified coefficient of restitution.
+        Finally, it computes the kinetic and potential energy of the system, records the current state of the bodies, and advances the simulation time by the specified time step.
         """
         # Update positions and velocities using the integrator and force function
         self.integrator(self.bodies, self.force_fn, self.dt, self.t)
 
-        n = len(self.bodies)
-        G = 6.67430e-11
-        EPS = 1e-10
-        KE = 0
-        PE = 0
+        # Handle collisions between bodies
+        self._handle_collisions()
 
-        for i in range(n):
-            for j in range(i+1, n):
-                distance = np.linalg.norm(self.bodies[i].pos - self.bodies[j].pos)
-                # Avoid singularity and extremely large forces when bodies are very close
-                if distance < EPS:
-                    distance = EPS
-                # Check for collision and resolve it if necessary
-                if distance < self.bodies[i].radius + self.bodies[j].radius:
-                    self._resolve_collision(self.bodies[i], self.bodies[j])
-
-                # Calculate potential energy contribution from this pair of bodies
-                PE += -G * self.bodies[i].mass * self.bodies[j].mass / distance
-
-            # Record trajectory and velocity for plotting
-            self.traj[i].append(self.bodies[i].pos.copy())
-            self.vels[i].append(self.bodies[i].vel.copy())
-            KE += 0.5 * self.bodies[i].mass * np.dot(self.bodies[i].vel, self.bodies[i].vel)
-
+        # Compute and record energy and trajectory history
+        KE, PE = self._compute_energy()
         self.energy_history["kinetic"].append(KE)
         self.energy_history["potential"].append(PE)
         self.energy_history["total"].append(KE + PE)
+        
+        for i, body in enumerate(self.bodies):
+            self.traj[i].append(body.pos.copy())
+            self.vels[i].append(body.vel.copy())
+
         self.t += self.dt
         self.time.append(self.t)
 
@@ -119,46 +110,114 @@ class Simulation:
         for _ in range(int(T / self.dt)):
             self.step()
 
-    def _resolve_collision(self, bi, bj):
-            """
-            Resolve a collision between two bodies bi and bj using the coefficient of restitution and positional correction to prevent interpenetration.
+    def _handle_collisions(self):
+        """
+        Check for and resolve collisions between bodies based on their positions and radii.
+        This method iterates through all unique pairs of bodies in the simulation, calculates the distance between
+        their centers, and checks if they are colliding (i.e., if the distance is less than the sum of their radii).
+        If a collision is detected, it calls the _resolve_collision() method to apply the appropriate response based on the coefficient of restitution and to ensure that the bodies do not interpenetrate after the
+        collision is resolved.
 
-            Parameters:
-            -----------
-            bi : Body
-                First body involved in the collision
-            bj : Body
-                Second body involved in the collision
+        The method uses a nested loop to compare each body with every other body, but only checks each pair once to avoid redundant calculations.
+        It also includes a check to skip collision resolution if the bodies are moving apart, as this indicates that they have already collided and are now separating.
 
-            The method calculates the normal vector between the two bodies, checks if they are moving towards each other,
-            and if so, applies an impulse to their velocities based on the coefficient of restitution.
-            It also applies a positional correction to ensure that the bodies do not interpenetrate after the
-            collision resolution.
+        parameters:
+        -----------
+        None
 
-            The collision resolution is based on the principles of conservation of momentum and energy,
-            modified by the coefficient of restitution to account for inelastic collisions.
-            The positional correction is applied to prevent the bodies from sticking together or passing through each other after the collision is resolved.
-            """
-            n = bi.pos - bj.pos
-            dist = np.linalg.norm(n)
-            n_hat = n / dist
-            v_rel = bi.vel - bj.vel
-            # Check if bodies are moving towards each other
-            if np.dot(v_rel, n_hat) > 0:
-                 return       # No collision if they are moving apart
-            # Compute impulse scalar
-            mass_red = (1 / bi.mass) + (1 / bj.mass)
-            J = - (1 + self.r) * np.dot(v_rel, n_hat) / mass_red
-            # Apply impulse to the velocities of the bodies
-            bi.vel += (J / bi.mass) * n_hat
-            bj.vel -= (J / bj.mass) * n_hat
+        The method relies on the properties of the Body objects (such as position, velocity, mass, and radius) to determine the collision response and to update the state of the bodies accordingly.
+        """
+        n = len(self.bodies)
 
-            # Positional correction to prevent interpenetration
-            penetration = bi.radius + bj.radius - dist
-            if penetration > 0:
-                 correction = penetration / mass_red
-                 bi.pos += (correction / bi.mass) * n_hat
-                 bj.pos -= (correction / bj.mass) * n_hat
+        for i in range(n):
+            bi = self.bodies[i]
+            for j in range(i+1, n):
+                bj = self.bodies[j]
+                delta = bi.pos - bj.pos                 # Vector from bj to bi
+                dist = np.linalg.norm(delta)            # Distance between centers of bi and bj
+
+                if dist < self.EPS:                     # Avoid singularity and extremely large forces when bodies are very close
+                    continue
+
+                if dist < bi.radius + bj.radius:        # Collision detected
+                    self._resolve_collision(bi, bj, delta, dist)
+
+    def _resolve_collision(self, bi, bj, delta, dist):
+        """
+        Resolve a collision between two bodies bi and bj using the coefficient of restitution and positional correction to prevent interpenetration.
+        This method calculates the normal vector of the collision, determines the relative velocity of the bodies along
+        the collision normal, and applies an impulse to the velocities of the bodies based on the coefficient of restitution.
+        It also includes a positional correction step to ensure that the bodies do not interpenetrate after the collision is resolved, which can occur due to numerical errors or if the time step is large enough
+        that the bodies overlap significantly before the collision is detected.
+
+        Parameters:
+        -----------
+        bi : Body
+            The first body involved in the collision
+        bj : Body
+            The second body involved in the collision
+        delta : np.ndarray
+            The vector from bj to bi (bi.pos - bj.pos)
+        dist : float
+            The distance between the centers of bi and bj
+
+        The method first checks if the bodies are moving towards each other by calculating the relative velocity along the collision normal. If they are moving apart, it returns without applying any collision response.
+        If they are moving towards each other, it calculates the impulse scalar based on the coefficient of restitution and the masses of the bodies, and applies this impulse to update their velocities.
+        Finally, it computes the penetration depth and applies a positional correction to ensure that the bodies are no longer overlapping after the collision is resolved.
+        """
+        n_hat = delta / dist
+        v_rel = bi.vel - bj.vel
+        # Check if bodies are moving towards each other
+        if np.dot(v_rel, n_hat) > 0:
+            return       # No collision if they are moving apart
+        # Compute impulse scalar
+        inv_mass_sum = (1 / bi.mass) + (1 / bj.mass)
+        J = - (1 + self.r) * np.dot(v_rel, n_hat) / inv_mass_sum
+        # Apply impulse to the velocities of the bodies
+        bi.vel += (J / bi.mass) * n_hat
+        bj.vel -= (J / bj.mass) * n_hat
+
+        # Positional correction to prevent interpenetration
+        penetration = bi.radius + bj.radius - dist
+        if penetration > 0:
+            correction = penetration / inv_mass_sum
+            bi.pos += (correction / bi.mass) * n_hat
+            bj.pos -= (correction / bj.mass) * n_hat
+
+    def _compute_energy(self):
+        """
+        Compute the total kinetic and potential energy of the system at the current state.
+        This method calculates the kinetic energy (KE) of each body based on its mass and velocity, and the potential energy (PE) of the system based on the gravitational interactions between all unique pairs of bodies.
+        The kinetic energy is computed using the formula KE = 0.5 * mass * velocity^2, while the potential energy is computed using the formula PE = -G * m1 * m2 / r for each pair of bodies, where G is the gravitational constant, m1 and m2 are the masses of the bodies, and r is the distance between their centers.
+        The method includes a check to avoid singularities when bodies are very close to each other by ensuring that the distance used in the potential energy calculation is not below a small threshold (EPS).
+        
+        Parameters:
+        -----------
+        None
+
+        The method iterates through all bodies to compute the kinetic energy and through all unique pairs of bodies to compute the potential energy, summing these values to return the total kinetic and potential energy of the system at the current state.
+
+        Returns:
+        --------
+        KE : float
+            The total kinetic energy of the system
+        PE : float
+            The total potential energy of the system
+        """
+        KE = 0.0
+        PE = 0.0
+        n = len(self.bodies)
+
+        for i in range(n):
+            bi = self.bodies[i]
+            KE += 0.5 * bi.mass * np.dot(bi.vel, bi.vel)
+
+            for j in range(i+1, n):
+                 bj = self.bodies[j]
+                 r = np.linalg.norm(bi.pos - bj.pos)
+                 r = max(r, self.EPS)
+                 PE -= self.G * bi.mass * bj.mass / r
+        return KE, PE
 
     def plot(self):
             """
