@@ -1,49 +1,51 @@
 """
 simulation.py
 
-Defines the Simulation class which manages the state and execution of the physics simulation.
+This module defines the Simulation class, which manages the state and evolution of a physics simulation involving multiple bodies.
+The Simulation class handles the integration of the equations of motion using various numerical integrators, collision detection and resolution between bodies, and energy calculations for the system.
+It also includes an adaptive time-stepping mechanism to ensure accuracy while maintaining computational efficiency.
+The Simulation class provides methods to run the simulation for a specified duration and to log the state of the system at each time step for later analysis or visualization.
+The Simulation class relies on the integrators defined in the integrators.py module and the mathematical functions defined in the math.py module to perform its operations.
+It also uses NumPy for efficient numerical computations and array manipulations.
 
-The Simulation class is responsible for stepping through time,
-applying the integrator to update the positions and velocities of the bodies, handling collisions,
-and recording the trajectory and energy history for analysis and plotting.
+Functions:
+------------
+- __init__: Initialize the simulation with a list of bodies, an integrator, a force function, a time step, and a coefficient of restitution for collisions.
+- step: Perform a single simulation step, including integration, collision handling, and state logging.
+- run: Run the simulation for a specified total time.
+- _pack_state: Convert the current state of the bodies into a flattened state vector for integration.
+- _unpack_state: Update the bodies' positions and velocities from a given state vector.
+- _compute_error: Compute the error of a proposed integration step for adaptive time stepping.
+- _log_state: Log the current state of the system, including energies and trajectories, for later analysis or visualization.
+- _handle_collisions: Check for and resolve collisions between bodies based on their positions and radii.
+- _resolve_collision: Resolve a collision between two bodies using the coefficient of restitution and positional correction to prevent interpenetration.
+- _compute_energy: Compute the total kinetic and potential energy of the system at the current state.
+- _adaptive_step: Perform an adaptive time step using the specified integrator and error control mechanism to ensure accuracy while maintaining computational efficiency.
 """
 
 import numpy as np
-import matplotlib.pyplot as plt
+
 
 class Simulation:
     """
-    Manages the physics simulation of multiple bodies.
+    Simulation class to manage the state and evolution of a physics simulation involving multiple bodies.
+    This class handles the integration of the equations of motion using various numerical integrators, collision detection and resolution between bodies, and energy calculations for the system. It also includes an adaptive time-stepping mechanism to ensure accuracy while maintaining computational efficiency. The Simulation class provides methods to run the simulation for a specified duration and to log the state of the system at each time step for later analysis or visualization.
+    The Simulation class relies on the integrators defined in the integrators.py module and the mathematical functions defined in the math.py module to perform its operations. It also uses NumPy for efficient numerical computations and array manipulations.
 
     Parameters:
     -----------
     bodies : list of Body
-        List of Body objects representing the physical bodies in the simulation.
+        A list of Body objects representing the bodies in the simulation, each with properties such as mass, position, velocity, and radius.
     integrator : function
-        A function that updates the positions and velocities of the bodies based on the forces acting on them and the time step.
+        A numerical integration function (e.g., euler, rk4, velocity_verlet) that takes the current state and computes the next state based on the equations of motion.
     force_fn : function
-        A function that computes the accelerations for the bodies based on their current positions and masses.
+        A function that computes the accelerations for the bodies based on their positions, typically representing the forces acting on the bodies (e.g., gravitational forces).
     dt : float
-        Time step for the simulation (in seconds)
-    restitution : float
-        Coefficient of restitution for collision handling (default: 0.8)
-
-    The Simulation class provides methods to step through the simulation,
-    run it for a specified total time, handle collisions between bodies,
-    compute the kinetic and potential energy of the system, and generate plots of the results.
-
-    methods:
-    --------
-    step() : Advances the simulation by one time step, updating positions and velocities, handling collisions, and recording energy and trajectory history.
-    run(T) : Runs the simulation for a total time
-    plot() : Generates plots of speed vs time and energy vs time for the simulation results.
-
-    internal methods:
-    -------------------
-    _handle_collisions() : Checks for and resolves collisions between bodies based on their positions and radii.
-    _resolve_collision(bi, bj, delta, dist) : Resolves a collision between two bodies bi and bj using the coefficient of restitution and positional correction to prevent interpenetration.
-    _compute_energy() : Computes the total kinetic and potential energy of the system at the current state.
+        The initial time step for the integration, which may be adjusted adaptively during the simulation.
+    restitution : float, optional
+        The coefficient of restitution for collisions between bodies, which determines how much kinetic energy is conserved during collisions (default is 0.8).
     """
+
     # Gravitational constant and small epsilon to avoid singularities
     G = 6.67430e-11
     EPS = 1e-10
@@ -55,60 +57,187 @@ class Simulation:
         self.dt = dt
         self.t = 0
         self.r = restitution
-        self.traj = [[] for _ in bodies] # To store position history for each body
-        self.vels = [[] for _ in bodies] # To store velocity history for each body
-        self.time = []                   # To store time history for plotting
-        self.energy_history = {          # To store energy history for plotting
-            "kinetic" : [],
-            "potential" : [],
-            "total" : []
+        self.traj = [[] for _ in bodies]  # To store position history for each body
+        self.vels = [[] for _ in bodies]  # To store velocity history for each body
+        self.time = []  # To store time history for plotting
+        self.energy_history = {  # To store energy history for plotting
+            "kinetic": [],
+            "potential": [],
+            "total": [],
         }
+        self.momentum_history = {
+            "linear": [],  # To store linear momentum history for plotting
+            "angular": [],  # To store angular momentum history for plotting
+        }
+        self.order_map = (
+            {  # Map integrator functions to their order for adaptive time stepping
+                "euler": 1,
+                "rk4": 4,
+                "velocity_verlet": 2,
+            }
+        )
+        self.safety = 0.9  # Safety factor for adaptive time stepping
+        self.atol = 1e-6  # Absolute tolerance for adaptive time stepping
+        self.rtol = 1e-3  # Relative tolerance for adaptive time stepping
+        self.max_dt = dt * 10  # Maximum allowed time step for adaptive time stepping
+        self.min_dt = dt * 1e-6  # Minimum allowed time step for adaptive time stepping
+
+        self.masses = np.array(
+            [b.mass for b in self.bodies]
+        )  # Precompute masses for efficiency
+        self.pos = np.array(
+            [b.pos for b in self.bodies]
+        )  # Precompute positions for efficiency
+        self.vel = np.array(
+            [b.vel for b in self.bodies]
+        )  # Precompute velocities for efficiency
+
+        self._log_state()  # Log the initial state of the system
 
     def step(self):
         """
-        Advance the simulation by one time step.
-        This method updates the positions and velocities of the bodies using the specified integrator and force function
-        It also handles collisions between bodies, computes the kinetic and potential energy of the system, and records the trajectory and energy history for analysis and plotting.
-
-        The method first calls the integrator to update the state of the bodies based on the forces acting on them.
-        Then it checks for collisions between bodies and resolves them using the specified coefficient of restitution.
-        Finally, it computes the kinetic and potential energy of the system, records the current state of the bodies, and advances the simulation time by the specified time step.
+        Perform a single simulation step, including integration, collision handling, and state logging.
+        This method uses the specified integrator to compute the next state of the system based on the current state and the forces acting on the bodies. It then updates the time,
+        handles any collisions that may have occurred during the step, and logs the new state of the system for later analysis or visualization.
+        The method relies on the _adaptive_step() method to perform the integration with adaptive time stepping, which ensures that the integration is accurate while maintaining computational efficiency.
+        After the integration step, it calls the _handle_collisions() method to check for and resolve any collisions between bodies,
+        and then calls the _log_state() method to record the current state of the system, including energies and trajectories, for later analysis or visualization.
         """
-        # Update positions and velocities using the integrator and force function
-        self.integrator(self.bodies, self.force_fn, self.dt, self.t)
-
-        # Handle collisions between bodies
-        self._handle_collisions()
-
-        # Compute and record energy and trajectory history
-        KE, PE = self._compute_energy()
-        self.energy_history["kinetic"].append(KE)
-        self.energy_history["potential"].append(PE)
-        self.energy_history["total"].append(KE + PE)
-        
-        for i, body in enumerate(self.bodies):
-            self.traj[i].append(body.pos.copy())
-            self.vels[i].append(body.vel.copy())
-
-        self.t += self.dt
-        self.time.append(self.t)
+        new_state, used_dt = (
+            self._adaptive_step()
+        )  # Perform adaptive time step to get the new state and the actual time step used
+        self._unpack_state(
+            new_state
+        )  # Update the bodies' positions and velocities from the new state vector
+        self.pos = np.array(
+            [b.pos for b in self.bodies]
+        )  # Update precomputed positions after unpacking the new state
+        self.vel = np.array(
+            [b.vel for b in self.bodies]
+        )  # Update precomputed velocities after unpacking the new state
+        self.t += used_dt  # Update the current time by the actual time step used
+        self._handle_collisions()  # Check for and resolve any collisions between bodies based on their updated positions
+        self._log_state()  # Log the current state of the system, including energies and trajectories, for later analysis or visualization
 
     def run(self, T):
         """
-        Run the simulation for a total time T.
+        Run the simulation for a given time T.
+
         This method repeatedly calls the step() method until the total simulation time T is reached.
-        It ensures that the simulation advances in increments of the specified time step dt and that all state
-        updates, collision handling, and energy calculations are performed at each step.
+        It includes a check to adjust the final time step if the next step would exceed the total simulation time, ensuring that the simulation ends exactly at time T.
+        The method uses a while loop to continue stepping through the simulation until the current time self.t reaches or exceeds the specified total time T.
+        Inside the loop, it checks if the next step would exceed T, and if so, it temporarily adjusts the time step to ensure that the simulation ends exactly at time T. After the loop,
+        the simulation will have evolved the system from the initial state to the state at time T, with all intermediate states logged for analysis or visualization.
 
         Parameters:
         -----------
         T : float
-            Total time to run the simulation (in seconds)
-        
-        The method calculates the number of steps needed to reach the total time T based on the time step dt and iteratively calls step() to advance the simulation.
+            The total time for which to run the simulation.The simulation will evolve the system from the initial state to the state at time T, with all intermediate states logged for analysis or visualization.
         """
-        for _ in range(int(T / self.dt)):
-            self.step()
+        while self.t < T:
+            if (
+                self.t + self.dt > T
+            ):  # Check if the next step would exceed the total simulation time
+                old_dt = self.dt  # Store the original time step
+                self.dt = T - self.t  # Adjust the time step to end exactly at time T
+                self.step()
+                self.dt = (
+                    old_dt  # Restore the original time step for future steps if needed
+                )
+            else:  # If the next step does not exceed T, simply perform a regular step
+                self.step()
+
+    def _pack_state(self):
+        """
+        Convert the current state of the bodies into a flattened state vector for integration.
+        This method takes the positions and velocities of all bodies in the simulation and concatenates them into a single flattened NumPy array.
+        The first part of the array contains the positions of all bodies (flattened), and the second part contains the velocities of all bodies (also flattened).
+        This state vector is used as input to the integrator functions to compute the next state of the system based on the equations of motion.
+        The method iterates through the list of bodies, extracts their positions and velocities, and constructs the state vector in the required format for the integrators.
+        The resulting state vector is a one-dimensional NumPy array that contains all the necessary information about the current state of the system for the integration step.
+
+        Returns:
+        --------
+        np.ndarray
+            A flattened array containing the positions and velocities of all bodies in the simulation, formatted for input to the integrator functions.
+        """
+        return np.concatenate(
+            (
+                np.array([b.pos for b in self.bodies]).flatten(),
+                np.array([b.vel for b in self.bodies]).flatten(),
+            )
+        )
+
+    def _unpack_state(self, state):
+        """
+        Update the bodies' positions and velocities from a given state vector.
+        This method takes a flattened state vector (as produced by the _pack_state() method) and updates the positions and velocities of the bodies in the simulation accordingly.
+        It extracts the positions and velocities from the state vector, reshapes them into the appropriate format, and assigns them back to the corresponding Body objects in the simulation.
+        The method assumes that the state vector is structured such that the first part contains the positions of all bodies (flattened) and the second part contains the velocities of all bodies (also flattened).
+        It uses the number of bodies in the simulation to correctly reshape the positions and velocities before updating the Body objects.
+
+        Parameters:
+        -----------
+        state : np.ndarray
+            A flattened array containing the positions and velocities of all bodies in the simulation, formatted as produced by the _pack_state() method. The method will extract the positions and velocities from this state vector and update the corresponding Body objects in the simulation with the new positions and velocities.
+
+        Note: This method is used to update the state of the bodies in the simulation after an integration step has been performed, allowing the simulation to evolve over time based on the computed next state.
+        The method iterates through the list of bodies, extracts the corresponding positions and velocities from the state vector, and assigns them back to the Body objects, effectively updating their state for the next iteration of the simulation.
+        """
+        n = len(self.bodies)
+        pos = state[: n * 3].reshape(n, 3)
+        vel = state[n * 3 :].reshape(n, 3)
+
+        for i, b in enumerate(self.bodies):
+            b.pos = pos[i]
+            b.vel = vel[i]
+
+    def _compute_error(self, state, dt):
+
+        # One full step
+        y_full = self.integrator(self.masses, state, self.force_fn, dt, self.t)
+
+        # Two half step
+        y_half = self.integrator(self.masses, state, self.force_fn, dt / 2, self.t)
+        y_half = self.integrator(
+            self.masses, y_half, self.force_fn, dt / 2, self.t + dt / 2
+        )
+
+        # Compute error using the difference between the full step and the two half steps, normalized by a combination of absolute and relative tolerances to ensure that the error is appropriately scaled for the magnitude of the solution.
+        # The error is computed as the root mean square of the normalized error vector, which provides a single scalar value representing the overall error of the integration step.
+        # This error value is then used in the adaptive time-stepping mechanism to adjust the time step for future steps, ensuring that the integration remains accurate while maintaining computational efficiency.
+        scale = self.atol + self.rtol * np.abs(y_half)
+        err_vec = (y_full - y_half) / scale
+        error = np.sqrt(np.mean(err_vec**2))
+        return error, y_half
+
+    def _log_state(self):
+        """
+        Log the current state of the simulation, including energies and trajectories.
+        This method computes the kinetic and potential energy of the system at the current state and stores these values in the energy history for later analysis or visualization.
+        It also appends the current positions and velocities of each body to their respective trajectory and velocity histories, allowing for tracking the evolution of the system over time.
+        Finally, it records the current time in the time history for plotting purposes.
+        The method relies on the _compute_energy() method to calculate the kinetic and potential energy of the system based on the current positions and velocities of the bodies, and it uses the properties of the Body objects to access their positions and velocities for logging.
+        This logged data can be used to analyze the behavior of the system, visualize trajectories, and plot energy changes over time to understand the dynamics of the simulation.
+        """
+        KE, PE = (
+            self._compute_energy()
+        )  # compute kinetic and potential energy of the system at the current state
+        self.energy_history["kinetic"].append(KE)  # store Kinetic Energy
+        self.energy_history["potential"].append(PE)  # store Potential Energy
+        self.energy_history["total"].append(KE + PE)  # store Total Energy
+
+        P, L = (
+            self._compute_momenta()
+        )  # compute linear and angular momentum of the system at the current state
+        self.momentum_history["linear"].append(np.linalg.norm(P))   # store Linear momentum
+        self.momentum_history["angular"].append(np.linalg.norm(L))  # store Angular momentum
+
+        for i, body in enumerate(self.bodies):
+            self.traj[i].append(body.pos.copy())  # store Position
+            self.vels[i].append(body.vel.copy())  # store Velocity
+
+        self.time.append(self.t)  # store Time
 
     def _handle_collisions(self):
         """
@@ -131,15 +260,17 @@ class Simulation:
 
         for i in range(n):
             bi = self.bodies[i]
-            for j in range(i+1, n):
+            for j in range(i + 1, n):
                 bj = self.bodies[j]
-                delta = bi.pos - bj.pos                 # Vector from bj to bi
-                dist = np.linalg.norm(delta)            # Distance between centers of bi and bj
+                delta = bi.pos - bj.pos  # Vector from bj to bi
+                dist = np.linalg.norm(delta)  # Distance between centers of bi and bj
 
-                if dist < self.EPS:                     # Avoid singularity and extremely large forces when bodies are very close
+                if (
+                    dist < self.EPS
+                ):  # Avoid singularity and extremely large forces when bodies are very close
                     continue
 
-                if dist < bi.radius + bj.radius:        # Collision detected
+                if dist < bi.radius + bj.radius:  # Collision detected
                     self._resolve_collision(bi, bj, delta, dist)
 
     def _resolve_collision(self, bi, bj, delta, dist):
@@ -169,10 +300,10 @@ class Simulation:
         v_rel = bi.vel - bj.vel
         # Check if bodies are moving towards each other
         if np.dot(v_rel, n_hat) > 0:
-            return       # No collision if they are moving apart
+            return  # No collision if they are moving apart
         # Compute impulse scalar
         inv_mass_sum = (1 / bi.mass) + (1 / bj.mass)
-        J = - (1 + self.r) * np.dot(v_rel, n_hat) / inv_mass_sum
+        J = -(1 + self.r) * np.dot(v_rel, n_hat) / inv_mass_sum
         # Apply impulse to the velocities of the bodies
         bi.vel += (J / bi.mass) * n_hat
         bj.vel -= (J / bj.mass) * n_hat
@@ -190,7 +321,7 @@ class Simulation:
         This method calculates the kinetic energy (KE) of each body based on its mass and velocity, and the potential energy (PE) of the system based on the gravitational interactions between all unique pairs of bodies.
         The kinetic energy is computed using the formula KE = 0.5 * mass * velocity^2, while the potential energy is computed using the formula PE = -G * m1 * m2 / r for each pair of bodies, where G is the gravitational constant, m1 and m2 are the masses of the bodies, and r is the distance between their centers.
         The method includes a check to avoid singularities when bodies are very close to each other by ensuring that the distance used in the potential energy calculation is not below a small threshold (EPS).
-        
+
         Parameters:
         -----------
         None
@@ -212,78 +343,76 @@ class Simulation:
             bi = self.bodies[i]
             KE += 0.5 * bi.mass * np.dot(bi.vel, bi.vel)
 
-            for j in range(i+1, n):
-                 bj = self.bodies[j]
-                 r = np.linalg.norm(bi.pos - bj.pos)
-                 r = max(r, self.EPS)
-                 PE -= self.G * bi.mass * bj.mass / r
+            for j in range(i + 1, n):
+                bj = self.bodies[j]
+                r = np.linalg.norm(bi.pos - bj.pos)
+                r = max(r, self.EPS)
+                PE -= self.G * bi.mass * bj.mass / r
         return KE, PE
 
-    def plot(self):
-            """
-            Generate plots of speed vs time and energy vs time for the simulation results.
-            This method creates a 2x2 grid of subplots to visualize the speed of each body over time, as well as the kinetic energy, potential energy, and total energy of the system
-            over time. It uses Matplotlib to create the plots and includes titles, axis labels, legends, and grid lines
-            for better readability.
+    def _adaptive_step(self):
+        """
+        Perform an adaptive time step using the specified integrator and error control mechanism to ensure accuracy while maintaining computational efficiency.
+        This method uses the _compute_error() method to estimate the error of a proposed integration step and adjusts the time step accordingly based on the specified absolute and relative tolerances, as well as a safety factor to prevent overly aggressive time step changes.
+        The method continues to adjust the time step until an acceptable error level is achieved, at which point it returns the new state of the system and the actual time step used for the integration.
+        The method relies on the order of the integrator (as defined in the order_map) to determine how the error scales with the time step, allowing it to compute the appropriate factor for adjusting the time step based on the estimated error.
+        This adaptive time-stepping mechanism helps to ensure that the integration remains accurate while avoiding unnecessarily small time steps that can lead to increased computational cost,
+        especially in situations where the system's dynamics change rapidly or when bodies come close to each other, which can lead to large forces and rapid changes in velocities.
 
-            The speed vs time plot shows how the speed of each body changes throughout the simulation, while the energy plots provide insight into the conservation of energy and the dynamics of the system.
+        Returns:
+        --------
+        new_state : np.ndarray
+            The updated state vector after a successful integration step with an acceptable error level
+        used_dt : float
+            The actual time step used for the integration, which may be different from the initial time step due to the adaptive time-stepping mechanism
 
-            The method ensures that the layout of the plots is adjusted to accommodate the overall title and that the visualizations are clear and informative for analyzing the results of the simulation.
+        The method uses a while loop to continuously compute the error and adjust the time step until an acceptable error level is achieved. Inside the loop, it computes the error using the _compute_error() method,
+        calculates the factor for adjusting the time step based on the error and the order of the integrator, and then updates the time step while ensuring that it remains within specified minimum and maximum bounds.
+        If the error is acceptable (i.e., less than or equal to 1), it returns the new state and the actual time step used; otherwise, it continues to adjust the time step and recompute the error until an acceptable level is reached.
+        """
+        state = self._pack_state()
+        p = self.order_map[self.integrator.__name__]
+        if p is None:  # Check if the integrator is recognized
+            raise ValueError("Unknown integrator order")
+        dt = self.dt  # Start with the current time step for the integration
+        while True:
+            error, y_new = self._compute_error(state, dt)
+            error = max(
+                error, 1e-14
+            )  # Avoid division by zero in case of very small errors
+            factor = self.safety * (1.0 / error) ** (
+                1 / (p + 1)
+            )  # Compute the factor for adjusting the time step based on the error and the order of the integrator
+            new_dt = dt * factor
+            new_dt = min(
+                self.max_dt, max(self.min_dt, new_dt)
+            )  # Ensure the new time step is within the specified bounds
 
-                Parameters:
-                -----------
-                None
+            if (
+                error <= 1.0
+            ):  # If the error is acceptable, return the new state and the actual time step used
+                self.dt = new_dt
+                return y_new, dt
+            else:  # If the error is not acceptable, update the time step and recompute the error
+                dt = new_dt
 
-            The method uses the recorded trajectory, velocity, and energy history from the simulation to generate the plots.
-            """
-            fig, axs = plt.subplots(2, 2, figsize=(12, 10))
-            fig.suptitle(f"N-Body Simulation Results (T={self.t:.1f}s)", fontsize=16)
+    def _compute_momenta(self):
+        """
+        Compute the total linear and angular momentum of the system at the current state.
+        This method calculates the linear momentum (P) of the system by summing the product of mass and velocity for all bodies,
+        and the angular momentum (L) by summing the cross product of the position vector (relative to the center of mass)
+        and the velocity vector (also relative to the center of mass) for all bodies, weighted by their masses.
+        The method first computes the center of mass position (R_COM) and velocity (V_COM) of the system,
+        then calculates the relative position (ri) and velocity (vi) of each body with respect to the center of mass,
+        and finally computes the total linear and angular momentum based on these relative quantities.
+        """
+        R_COM = np.sum(self.masses[:, None] * self.pos, axis=0) / np.sum(self.masses)
+        V_COM = np.sum(self.masses[:, None] * self.vel, axis=0) / np.sum(self.masses)
 
-            # --- Top-Left: Speed vs Time ---
-            # self.vels contains vectors [vx, vy, vz]. We compute the norm for speed.
-            ax_speed = axs[0, 0]
-            for i, body_vels in enumerate(self.vels):
-                # Calculate speed (magnitude of velocity vector) for each step
-                speeds = [np.linalg.norm(v) for v in body_vels]
-                ax_speed.plot(self.time, speeds, label=f'Body {i}')
-            
-            ax_speed.set_title("Speed vs Time")
-            ax_speed.set_xlabel("Time (s)")
-            ax_speed.set_ylabel("Speed (m/s)")
-            ax_speed.spines["right"].set_visible(False)
-            ax_speed.spines["top"].set_visible(False)
-            ax_speed.legend()
-            ax_speed.grid(True, alpha=0.3)
+        P = np.sum(self.masses[:, None] * self.vel, axis=0)
 
-            # --- Top-Right: Kinetic Energy vs Time ---
-            ax_ke = axs[0, 1]
-            ax_ke.plot(self.time, self.energy_history["kinetic"], color='tab:orange')
-            ax_ke.set_title("Total Kinetic Energy")
-            ax_ke.set_xlabel("Time (s)")
-            ax_ke.set_ylabel("Energy (J)")
-            ax_ke.spines["right"].set_visible(False)
-            ax_ke.spines["top"].set_visible(False)
-            ax_ke.grid(True, alpha=0.3)
+        ri = self.pos - R_COM
+        vi = self.vel - V_COM
 
-            # --- Bottom-Left: Potential Energy vs Time ---
-            ax_pe = axs[1, 0]
-            ax_pe.plot(self.time, self.energy_history["potential"], color='tab:green')
-            ax_pe.set_title("Total Potential Energy")
-            ax_pe.set_xlabel("Time (s)")
-            ax_pe.set_ylabel("Energy (J)")
-            ax_pe.spines["right"].set_visible(False)
-            ax_pe.spines["top"].set_visible(False)
-            ax_pe.grid(True, alpha=0.3)
-
-            # --- Bottom-Right: Total Energy vs Time ---
-            ax_total = axs[1, 1]
-            ax_total.plot(self.time, self.energy_history["total"], color='tab:red')
-            ax_total.set_title("Total Energy (Kinetic + Potential)")
-            ax_total.set_xlabel("Time (s)")
-            ax_total.set_ylabel("Energy (J)")
-            ax_total.spines["right"].set_visible(False)
-            ax_total.spines["top"].set_visible(False)
-            ax_total.grid(True, alpha=0.3)
-
-            plt.tight_layout(rect=[0, 0.03, 1, 0.95]) # Adjust layout to make room for suptitle
-            plt.show()
+        L = np.sum((self.masses[:, None] * np.cross(ri, vi)), axis=0)
+        return P, L

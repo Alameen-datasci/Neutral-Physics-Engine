@@ -2,6 +2,28 @@
 
 All notable changes to the "Neutral Physics Engine" project will be documented in this file.
 
+## [v3.0]
+### Added
+- **Analysis Module:** Introduced a new `analysis.py` module with an `Analysis` class for post-simulation evaluation, including methods for calculating and plotting relative energy error, energy components (kinetic, potential, total), energy drift rate, trajectory projections (xy, xz, yz planes), and magnitudes of linear and angular momentum over time.
+- **Adaptive Time-Stepping:** Implemented an adaptive time-step mechanism in `simulation.py` using error estimation (`_compute_error`) and adjustment (`_adaptive_step`) based on integrator order, with configurable tolerances (atol, rtol), safety factor, and min/max dt bounds for improved accuracy and efficiency in dynamic systems.
+- **Momentum Conservation Tracking:** Added logging and computation of linear and angular momentum history in `simulation.py` via `_compute_momenta`, relative to the center of mass, to verify conservation properties.
+- **State Vector Management:** Added helper methods `_pack_state` and `_unpack_state` in `simulation.py` for flattening/unflattening positions and velocities, enabling seamless integration with ODE solvers.
+- **Integrator Order Mapping:** Defined an `order_map` in `simulation.py` to support adaptive stepping by associating numerical orders with integrators (e.g., Euler: 1, RK4: 4, Velocity Verlet: 2).
+- **Rotational Placeholders:** Added optional `orientation` (quaternion) and `angular_vel` parameters to the `Body` class in `body.py` as placeholders for future rotational dynamics (currently commented out with validation).
+- **3D Trajectory Logging:** Enhanced trajectory storage in `simulation.py` to capture full 3D positions for all bodies, supporting advanced visualizations like projections.
+
+### Changed
+- **Body Class Simplification:** Removed the `Earth` subclass from `body.py`; now all bodies (e.g., Sun, Earth) are instantiated as generic `Body` objects for greater flexibility.
+- **Integrator Refactoring:** Updated integrators in `integrators.py` to operate on flattened state vectors instead of direct Body mutations, improving modularity and compatibility with adaptive stepping.
+- **Simulation Initialization:** Added parameters for adaptive control (atol, rtol, safety, min_dt, max_dt) in `Simulation__init__` for finer simulation tuning.
+- **Main Script Example:** Shifted the demonstration in `main.py` from a short Earth-meteor collision to a year-long Sun-Earth orbital simulation, integrating the new `Analysis` class for comprehensive result evaluation (e.g., energy drift rate, projections, momentum plots).
+- **Plotting Decoupling:** Moved all visualization logic from `simulation.py` to the new `Analysis` class, promoting separation of concerns.
+- **Docstring Enhancements:** Expanded docstrings across all modules for better clarity, including notes on usage, limitations, and future extensions (e.g., symplectic integrators for energy conservation).
+- **Collision and Energy Handling:** Minor refinements in `_handle_collisions` and `_compute_energy` for consistency with state vector approach.
+
+### Removed
+- **In-Place Body Updates in Integrators:** Eliminated direct mutations in old integrator functions to favor functional state returns.
+
 ## [v2.5]
 ### Added
 - **Velocity Verlet Integration:** Implemented in `integrators.py` for improved numerical stability and accuracy in simulating particle trajectories.

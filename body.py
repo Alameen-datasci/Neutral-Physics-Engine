@@ -1,27 +1,39 @@
 """
-Defines the Body class.
+body.py
 
-A Body represents a point mass with position, velocity and radius
-used in the physics simulation.
+This module defines the Body class, which represents a physical body in the simulation. Each Body instance has properties such as mass, position, velocity, and radius.
+The class includes validation to ensure that the properties are physically meaningful (e.g., positive mass and radius) and that the position and velocity are 3D vectors.
+The Body class serves as a fundamental building block for the physics engine, allowing us to represent and manipulate individual bodies in the simulation.
 """
 
 import numpy as np
 
+
 class Body:
     """
-    Represents a physical body in the simulation.
+    Represents a physical body in the simulation with properties such as mass, position, velocity, and radius.
 
     Parameters:
-        mass : float (kilogram)
-            Mass of the body
-        pos : np.ndarray
-            Current position vector
-        vel : np.ndarray
-            Current velocity vector
-        radius : float (meter)
-            Radius of the body
+    -----------
+    mass : float
+        Mass of the body (must be positive and non-zero)
+    pos : array-like
+        Initial position of the body as a 3D vector (shape (3,))
+    vel : array-like
+        Initial velocity of the body as a 3D vector (shape (3,))
+    radius : float
+        Radius of the body (must be positive)
+    orientation : array-like, optional
+        Initial orientation of the body as a quaternion (shape (4,)), default is None (not implemented)
+    angular_vel : array-like, optional
+        Initial angular velocity of the body as a 3D vector (shape (3,)), default is None (not implemented)
+
+    Note: The Body class currently focuses on translational properties (mass, position, velocity, radius) and includes placeholders for rotational properties (orientation and angular velocity) that can be implemented in future versions of the physics engine.
     """
-    def __init__(self, mass, pos, vel, radius):
+
+    def __init__(self, mass, pos, vel, radius, orientation=None, angular_vel=None):
+
+        # ------------------------- Scalars -------------------------
         if mass <= 0:
             raise ValueError("Body mass must be positive and non-zero")
         self.mass = float(mass)
@@ -30,6 +42,7 @@ class Body:
             raise ValueError("Body radius must be positive")
         self.radius = float(radius)
 
+        # ------------------------- Translational State -------------------------
         self.pos = np.asarray(pos, dtype=float)
         self.vel = np.asarray(vel, dtype=float)
 
@@ -39,38 +52,26 @@ class Body:
         if self.vel.shape != (3,):
             raise ValueError("Velocity must be a 3D vector of shape (3,)")
 
-class Earth(Body):
-    """
-    Represents the Earth as a Physical Body in the simulation.
+        # ------------------------- Defaults (Rotational) -------------------------
+        # if orientation is None:
+        #     orientation = [1, 0, 0, 0]
 
-    This class inherits from Body and initializes with Earth's standard mass and radius.
-    The initial position and velocity can be set, but default to zero (stationary at origin).
+        # if angular_vel is None:
+        #     angular_vel = [0, 0, 0]
 
-    Parameters:
-    -----------
-    pos : np.ndarray
-        Initial position vector (default: [0, 0, 0])
-    vel : np.ndarray
-        Initial velocity vector (default: [0, 0, 0])
+        # ------------------------- Rotational State -------------------------
+        # self.orientation = np.asarray(orientation, dtype=float)
+        # self.angular_vel = np.asarray(angular_vel, dtype=float)
 
-    Notes:
-    ------
-    Mass and radius are set to Earth's standard values:
-    - Mass: 5.9722e24 kg
-    - Radius: 6371008.8 m
-    """
-    MASS = 5.9722e24
-    RADIUS = 6371008.8
+        # if self.orientation.shape != (4,):
+        #     raise ValueError(
+        #         "Orientation must be a quaternion represented as a 4D vector of shape (4,)"
+        #     )
 
-    def __init__(self, pos=None, vel=None):
-        if pos is None:
-            pos = np.zeros(3)
-        if vel is None:
-            vel = np.zeros(3)
+        # if self.angular_vel.shape != (3,):
+        #     raise ValueError("Angular velocity must be a 3D vector of shape (3,)")
 
-        super().__init__(
-            mass=Earth.MASS,
-            pos=pos,
-            vel=vel,
-            radius=Earth.RADIUS
-        )
+        # norm = np.linalg.norm(self.orientation)
+        # if norm < 1e-12:
+        #     raise ValueError("Orientation quaternion must be non-zero")
+        # self.orientation /= norm

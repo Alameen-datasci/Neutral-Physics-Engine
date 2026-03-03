@@ -1,50 +1,82 @@
 """
-Numerical integration methods.
+integrators.py
 
-Implements Euler and Runge-Kutta (RK4) time-stepping
-for advancing the system state.
+This module implements various numerical integration methods for solving ordinary differential equations (ODEs) that arise in physics simulations. It includes both non-symplectic integrators (like Euler and RK4) and symplectic integrators (like Velocity Verlet). The choice of integrator can affect the accuracy and stability of the simulation, especially for long-term integrations or systems with strong forces.
+
+Functions:
+- euler: Perform a single Euler step.
+- rk4: Perform a single Runge-Kutta 4th order step.
+- velocity_verlet: Perform a single Velocity Verlet step.
+
+Helper functions:
+- _rk4_step: Helper function that implements the RK4 algorithm.
+- _derivative: Helper function that creates a derivative function for the ODE integrators based on the provided force function.
 """
 
 import numpy as np
 
-def euler_step(bodies, force_fn, dt, t):
+
+# ----------------------------- ODE integrators -----------------------------
+def euler(masses, state_vector, force_fn, dt, t):
     """
-    Update the bodies using Euler integration.
+    Perform a single Euler step.
 
     Parameters:
     -----------
-    bodies : list of Body
-        List of bodies to update
+    masses : list of float
+        List of masses for the bodies in the system
+    state_vector : np.ndarray
+        Flattened array containing the positions and velocities of all bodies
     force_fn : function
-        Function that computes the accelerations for the bodies
+        Function that computes the accelerations for the bodies based on their positions
     dt : float
         Time step for the integration
     t : float
         Current time
 
-    This function computes the accelerations for each body using the provided force function, and then updates the positions and velocities of the bodies using the Euler method. The positions are updated based on the current velocities, and the velocities are updated based on the computed accelerations.
+    Returns:
+    --------
+    np.ndarray
+        Updated state vector after one Euler step
 
     Note: The Euler method is a simple first-order integration method and may not be suitable for long-term simulations or systems with strong forces due to its limited accuracy and stability.
     """
-    n = len(bodies)
-    masses = np.array([b.mass for b in bodies])
+    n = len(masses)
+    f = _derivative(masses, force_fn, n)
+    return state_vector + f(t, state_vector) * dt
 
-    x0 = np.concatenate(
-        [np.array([b.pos for b in bodies]).flatten(),
-         np.array([b.vel for b in bodies]).flatten()]
-    )
 
-    f = derivative(masses, force_fn, n)
-    x1 = x0 + f(t, x0) * dt
+def rk4(masses, state_vector, force_fn, dt, t):
+    """
+    Perform a single Runge-Kutta 4th order step.
 
-    pos = x1[:n*3].reshape(n, 3)
-    vel = x1[n*3:].reshape(n, 3)
+    Parameters:
+    -----------
+    masses : list of float
+        List of masses for the bodies in the system
+    state_vector : np.ndarray
+        Flattened array containing the positions and velocities of all bodies
+    force_fn : function
+        Function that computes the accelerations for the bodies based on their positions
+    dt : float
+        Time step for the integration
+    t : float
+        Current time
 
-    for i in range(n):
-        bodies[i].pos = pos[i]
-        bodies[i].vel = vel[i]
+    Returns:
+    --------
+    np.ndarray
+        Updated state vector after one RK4 step
 
-def rk4_step(fun, dt, t, x):
+    Note: The RK4 method is a widely used fourth-order integration method that provides a good balance between accuracy and computational cost for many problems.
+    """
+    n = len(masses)
+
+    f = _derivative(masses, force_fn, n)
+    return _rk4_step(f, dt, t, state_vector)
+
+
+def _rk4_step(fun, dt, t, x):
     """
     Perform a single RK4 step.
 
@@ -64,139 +96,97 @@ def rk4_step(fun, dt, t, x):
     np.ndarray
         Updated state vector after one RK4 step
 
-    The RK4 method computes intermediate slopes (k1, k2, k3, k4) to achieve
-    higher accuracy compared to simpler methods like Euler's method.
+    Note: This is a helper function that implements the RK4 algorithm. It computes intermediate slopes (k1, k2, k3, k4) and combines them to produce the final updated state vector.
     """
     k1 = fun(t, x)
-    k2 = fun(t + dt/2, x + dt/2 * k1)
-    k3 = fun(t + dt/2, x + dt/2 * k2)
+    k2 = fun(t + dt / 2, x + dt / 2 * k1)
+    k3 = fun(t + dt / 2, x + dt / 2 * k2)
     k4 = fun(t + dt, x + dt * k3)
-    return x + dt/6 * (k1 + 2*k2 + 2*k3 + k4)
+    return x + dt / 6 * (k1 + 2 * k2 + 2 * k3 + k4)
 
-def derivative(masses, force_fn, n):
+
+# ----------------------------- Symplectic integrators -----------------------------
+def velocity_verlet(masses, state_vector, force_fn, dt, t):
     """
-    Create a function that computes the derivative of the state vector.
+    Perform a single Velocity Verlet step.
 
     Parameters:
     -----------
-    masses : np.ndarray
-        Array of masses for each body in the simulation
+    masses : list of float
+        List of masses for the bodies in the system
+    state_vector : np.ndarray
+        Flattened array containing the positions and velocities of all bodies
     force_fn : function
-        Function that computes the accelerations for the bodies
+        Function that computes the accelerations for the bodies based on their positions
+    dt : float
+        Time step for the integration
+    t : float
+        Current time
+
+    Returns:
+    --------
+    np.ndarray
+        Updated state vector after one Velocity Verlet step
+
+    Note: The Velocity Verlet method is a symplectic integrator that is particularly well-suited for Hamiltonian systems, as it better conserves energy over long simulations compared to non-symplectic methods like Euler or RK4.
+    It updates positions based on current velocities and accelerations, then computes new accelerations based on the updated positions, and finally updates velocities using the average of the old and new accelerations.
+    """
+    n = len(masses)
+    pos = state_vector[: n * 3].reshape(n, 3)
+    vel = state_vector[n * 3 :].reshape(n, 3)
+    a_n = force_fn(masses, pos)
+    pos_new = pos + vel * dt + 0.5 * a_n * dt**2
+    a_new = force_fn(masses, pos_new)
+    vel_new = vel + 0.5 * (a_n + a_new) * dt
+    new_state = np.empty_like(state_vector)
+    new_state[: n * 3] = pos_new.flatten()
+    new_state[n * 3 :] = vel_new.flatten()
+    return new_state
+
+
+# ----------------------------- Helper functions -----------------------------
+def _derivative(masses, force_fn, n):
+    """
+    Create a function that computes the derivative of the state vector (positions and velocities) given the current time and state.
+
+    Parameters:
+    -----------
+    masses : list of float
+        List of masses for the bodies in the system
+    force_fn : function
+        Function that computes the accelerations for the bodies based on their positions
     n : int
-        Number of bodies in the simulation
+        Number of bodies in the system
 
     Returns:
     --------
     function
-        A function that takes time t and state vector x, and returns the derivative dx/dt
-    
-    This function constructs a derivative function that can be used with the RK4 integrator. The returned function computes the accelerations based on the current positions of the bodies and returns the time derivative of the state vector, which includes both the velocities (derivative of positions) and the accelerations (derivative of velocities).
+        A function that takes time t and state_vector as input and returns the derivative of the state vector (velocities and accelerations)
 
-    The state vector x is expected to be a concatenation of the positions and velocities of all bodies, and the derivative function will return a vector of the same shape containing the derivatives of these quantities.
+    Note: This function is used to create the derivative function needed for ODE integrators like Euler and RK4. It extracts positions and velocities from the state vector, computes accelerations using the provided force function, and returns the combined derivative vector.
     """
-    
-    def f(t, x):
+
+    def f(t, state_vector):
         """
         Compute the derivative of the state vector.
 
         Parameters:
         -----------
         t : float
-            Current time (not used in this case, but included for generality)
-        x : np.ndarray
-            Current state vector (positions and velocities) of shape (2*n*dim,)
+            Current time
+        state_vector : np.ndarray
+            Flattened array containing the positions and velocities of all bodies
 
         Returns:
         --------
         np.ndarray
-            Derivative of the state vector (dx/dt) of shape (2*n*dim,)
+            Derivative of the state vector (velocities and accelerations)
 
-        The state vector x is structured as follows:
-        - The first n*dim elements correspond to the positions of the bodies (flattened).
-        - The next n*dim elements correspond to the velocities of the bodies (flattened).
+        Note: The first half of the returned vector contains the velocities (derivative of positions), and the second half contains the accelerations (derivative of velocities) computed from the force function.
         """
-        pos = x[:n*3].reshape(n, 3)
-        vel = x[n*3:].reshape(n, 3)
+        pos = state_vector[: n * 3].reshape(n, 3)
+        vel = state_vector[n * 3 :].reshape(n, 3)
         accs = force_fn(masses, pos)
-        dx = np.zeros_like(x)
-        dx[:n*3] = vel.flatten()
-        dx[n*3:] = accs.flatten()
-        return dx
+        return np.concatenate([vel.flatten(), accs.flatten()])
+
     return f
-
-def rk4_body_step(bodies, force_fn, dt, t):
-    """
-    Update the bodies using RK4 integration.
-
-    Parameters:
-    -----------
-    bodies : list of Body
-        List of bodies to update
-    force_fn : function
-        Function that computes the accelerations for the bodies
-    dt : float
-        Time step for the integration
-    t : float
-        Current time
-
-    This function prepares the state vector from the list of Body objects, computes the derivative function,
-    and then performs a single RK4 step to update the positions and velocities of the bodies.
-
-    After the RK4 step, it reshapes the updated state vector back into positions and velocities and updates the Body objects accordingly.
-    """
-    n = len(bodies)
-
-    masses = np.array([b.mass for b in bodies])
-
-    x0 = np.concatenate(
-        [np.array([b.pos for b in bodies]).flatten(),
-         np.array([b.vel for b in bodies]).flatten()]
-    )
-
-    f = derivative(masses, force_fn, n)
-    x1 = rk4_step(f, dt, t, x0)
-
-    pos = x1[:n*3].reshape(n, 3)
-    vel = x1[n*3:].reshape(n, 3)
-
-    for i in range(n):
-        bodies[i].pos = pos[i]
-        bodies[i].vel = vel[i]
-
-def velocity_verlet_step(bodies, force_fn, dt, t):
-    """
-    Update the bodies using the Velocity Verlet integration method.
-
-    Parameters:
-    -----------
-    bodies : list of Body
-        List of bodies to update
-    force_fn : function
-        Function that computes the accelerations for the bodies
-    dt : float
-        Time step for the integration
-    t : float
-        Current time
-    
-    The Velocity Verlet method is a symplectic integrator that provides better energy conservation properties compared to the Euler method, especially for systems with conservative forces. It updates positions and velocities in a way that takes into account the accelerations at both the current and the next time step, leading to improved stability and accuracy for many physical simulations.
-
-    The method first computes the new positions using the current velocities and accelerations, then computes the new accelerations based on the updated positions, and finally updates the velocities using the average of the old and new accelerations.
-
-    Note: The Velocity Verlet method is particularly well-suited for simulations of classical mechanics, such as planetary motion or molecular dynamics, where energy conservation is important.
-    """
-    n = len(bodies)
-    masses = np.array([b.mass for b in bodies])
-    pos = np.array([b.pos for b in bodies])
-    vel = np.array([b.vel for b in bodies])
-    a_n = force_fn(masses, pos)                         # Compute current accelerations based on current positions
-
-    pos_new = pos + vel * dt + 0.5 * a_n * dt**2        # Update positions using current velocities and accelerations
-
-    a_new = force_fn(masses, pos_new)                   # Compute new accelerations based on updated positions
-
-    vel_new = vel + 0.5 * (a_n + a_new) * dt            # Update velocities using the average of the old and new accelerations
-
-    for i in range(n):
-        bodies[i].pos = pos_new[i]
-        bodies[i].vel = vel_new[i]
