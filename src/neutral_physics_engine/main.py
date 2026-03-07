@@ -26,13 +26,13 @@ sim = Simulation(bodies=bodies, force_fn=forces, integrator=rk4, dt=dt)
 sim.run(T)
 
 # ------------------------------------- Analyze results --------------------------------------
-analysis = Analysis(sim)
-analysis.relative_energy_error()
-analysis.plot_energy_components()
-print(analysis.energy_drift_rate())
-analysis.plot_projection(planes=["xy", "xz", "yz"])
-analysis.plot_linear_momentum()
-analysis.plot_angular_momentum()
+# analysis = Analysis(sim)
+# analysis.relative_energy_error()
+# analysis.plot_energy_components()
+# print(analysis.energy_drift_rate())
+# analysis.plot_projection(planes=["xy", "xz", "yz"])
+# analysis.plot_linear_momentum()
+# analysis.plot_angular_momentum()
 
 # ------------------------------------- Notes --------------------------------------
 # This is a basic example of how to set up and run a physics simulation using the defined classes and functions.

@@ -2,6 +2,28 @@
 
 All notable changes to the "Neutral Physics Engine" project will be documented in this file.
 
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased] / [v3.0.1] (pending release)
+### Added
+- **Modern Package Layout:** Adopted the recommended `src/` layout (`src/neutral_physics_engine/`) for better separation between library code and development/test files.
+- **Initial Test Suite:** Added a `tests/` directory with basic unit tests:
+  - `test_body.py`: validation of Body initialization and vector shapes
+  - `test_forces.py`: symmetry and correctness of gravitational accelerations
+  - `test_integrator.py`: basic smoke tests for integrator steps (state shape preservation, simple cases)
+  - `test_simulation.py`: energy and momentum conservation checks in short runs
+- **Testing Infrastructure:** Added placeholder `__init__.py` files and initial pytest-compatible structure.
+
+### Changed
+- **Project Structure Reorganization:** Moved all core package code into `src/neutral_physics_engine/`; updated import paths accordingly.
+- **Documentation & Maintainability:** Minor updates to module docstrings and README references to reflect the new layout.
+
+### Fixed
+- No functional changes to simulation logic, physics, or public API — purely structural and testing improvements.
+
+**No breaking changes** — this is a patch release (3.0.1).
+
 ## [v3.0]
 ### Added
 - **Analysis Module:** Introduced a new `analysis.py` module with an `Analysis` class for post-simulation evaluation, including methods for calculating and plotting relative energy error, energy components (kinetic, potential, total), energy drift rate, trajectory projections (xy, xz, yz planes), and magnitudes of linear and angular momentum over time.
