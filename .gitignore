@@ -1,24 +1,62 @@
-# Python bytecode
+# =============================================
+# Neutral Physics Engine — .gitignore (v4.0.0)
+# =============================================
+
+# Python bytecode and cache
 __pycache__/
 *.py[cod]
 *.pyo
+*.pyd
 
 # Virtual environments
 venv/
 .env/
+.venv/
 
 # Distribution / packaging
 build/
 dist/
 *.egg-info/
+src/neutral_physics_engine.egg-info/
+
+# Project-specific generated files
+results/
+*.h5
+*.hdf5
+
+# Analysis & visualization outputs
+*.png
+*.jpg
+*.jpeg
+*.pdf
+*.svg
 
 # Jupyter
 .ipynb_checkpoints/
 
-# OS files
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Logs and temporary files
+*.log
+logs/
+
+# OS generated files
 .DS_Store
 Thumbs.db
+.DS_Store?
+._*
 
-# IDE
+# IDE / Editor files
 .vscode/
 .idea/
+*.swp
+*.swo
+*~
+
+# MacOS specific
+.AppleDouble
+.LSOverride

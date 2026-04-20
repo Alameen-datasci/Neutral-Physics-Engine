@@ -1,102 +1,124 @@
 """
 integrators.py
 
-This module implements various numerical integration methods for solving ordinary differential equations (ODEs) that arise in physics simulations. It includes both non-symplectic integrators (like Euler and RK4) and symplectic integrators (like Velocity Verlet). The choice of integrator can affect the accuracy and stability of the simulation, especially for long-term integrations or systems with strong forces.
+This module implements discrete-time numerical integration schemes for solving the
+ordinary differential equations (ODEs) governing N-body dynamics. It provides both
+standard non-symplectic Runge-Kutta class integrators (Euler, RK4) and a symplectic
+integrator (Velocity Verlet).
 
-Functions:
-- euler: Perform a single Euler step.
-- rk4: Perform a single Runge-Kutta 4th order step.
-- velocity_verlet: Perform a single Velocity Verlet step.
-
-Helper functions:
-- _rk4_step: Helper function that implements the RK4 algorithm.
-- _derivative: Helper function that creates a derivative function for the ODE integrators based on the provided force function.
+The choice of integrator dictates the stability, computational cost, and long-term
+energy conservation characteristics of the simulation:
+- Non-symplectic integrators (Euler, RK4) can suffer from energy drift over time
+  but offer varying degrees of local truncation accuracy.
+- Symplectic integrators (Velocity Verlet) explicitly preserve the geometric
+  properties of Hamiltonian systems, ensuring bounded energy fluctuations over
+  arbitrarily long integration periods, making them ideal for orbital mechanics.
 """
 
 import numpy as np
+from typing import Callable
 
 
 # ----------------------------- ODE integrators -----------------------------
-def euler(masses, state_vector, force_fn, dt, t):
+def euler(
+    masses: list[float],
+    state_vector: list | np.ndarray,
+    field: Callable[[list[float], np.ndarray], np.ndarray],
+    dt: np.float64,
+    t: np.float64,
+) -> np.ndarray:
     """
-    Perform a single Euler step.
+    Propagate the system state forward in time using the first-order Forward Euler method.
+
+    This is an explicit, non-symplectic integrator with a local truncation error
+    proportional to O(dt^2). While computationally inexpensive, it is generally
+    unstable for long-term integration of conservative forces and will exhibit
+    rapid energy divergence.
 
     Parameters:
     -----------
-    masses : list of float
-        List of masses for the bodies in the system
+    masses : list[float]
+        List of masses for the N bodies in the system.
     state_vector : np.ndarray
-        Flattened array containing the positions and velocities of all bodies
-    force_fn : function
-        Function that computes the accelerations for the bodies based on their positions
-    dt : float
-        Time step for the integration
-    t : float
-        Current time
+        A flattened 1D array of length 6N containing the concatenated positions
+        and velocities of all bodies.
+    field : Callable
+        A callable vector field (e.g., GravityField) that accepts masses and
+        positions, returning the instantaneous acceleration array.
+    dt : np.float64
+        The temporal step size for the integration.
+    t : np.float64
+        The current simulation time.
 
     Returns:
     --------
     np.ndarray
-        Updated state vector after one Euler step
-
-    Note: The Euler method is a simple first-order integration method and may not be suitable for long-term simulations or systems with strong forces due to its limited accuracy and stability.
+        The updated 1D state vector after one Euler time step.
     """
     n = len(masses)
-    f = _derivative(masses, force_fn, n)
+    f = _derivative(masses, field, n)
     return state_vector + f(t, state_vector) * dt
 
 
-def rk4(masses, state_vector, force_fn, dt, t):
+def rk4(
+    masses: list[float],
+    state_vector: list | np.ndarray,
+    field: Callable[[list[float], np.ndarray], np.ndarray],
+    dt: np.float64,
+    t: np.float64,
+) -> np.ndarray:
     """
-    Perform a single Runge-Kutta 4th order step.
+    Propagate the system state forward using the classical 4th-order Runge-Kutta method (RK4).
+
+    RK4 evaluates the phase-space derivative at four distinct points within the
+    time interval to compute a highly accurate weighted average slope. It has a local
+    truncation error of O(dt^5). Though non-symplectic (energy will eventually drift),
+    its high precision makes it robust for transient dynamics or short-timescale accuracy.
 
     Parameters:
     -----------
-    masses : list of float
-        List of masses for the bodies in the system
+    masses : list[float]
+        List of masses for the N bodies in the system.
     state_vector : np.ndarray
-        Flattened array containing the positions and velocities of all bodies
-    force_fn : function
-        Function that computes the accelerations for the bodies based on their positions
-    dt : float
-        Time step for the integration
-    t : float
-        Current time
+        A flattened 1D array of length 6N containing the concatenated positions
+        and velocities of all bodies.
+    field : Callable
+        A callable vector field that computes accelerations given the spatial configuration.
+    dt : np.float64
+        The temporal step size for the integration.
+    t : np.float64
+        The current simulation time.
 
     Returns:
     --------
     np.ndarray
-        Updated state vector after one RK4 step
-
-    Note: The RK4 method is a widely used fourth-order integration method that provides a good balance between accuracy and computational cost for many problems.
+        The updated 1D state vector after one RK4 time step.
     """
     n = len(masses)
 
-    f = _derivative(masses, force_fn, n)
+    f = _derivative(masses, field, n)
     return _rk4_step(f, dt, t, state_vector)
 
 
-def _rk4_step(fun, dt, t, x):
+def _rk4_step(fun, dt: np.float64, t: np.float64, x: np.ndarray) -> np.ndarray:
     """
-    Perform a single RK4 step.
+    Internal kernel to evaluate a single RK4 integration step.
 
     Parameters:
     -----------
-    fun : function
-        Function that computes the derivative (dx/dt) given time t and state x
-    dt : float
-        Time step for the integration
-    t : float
-        Current time
+    fun : Callable
+        The phase-space derivative function computing dx/dt.
+    dt : np.float64
+        The time step size.
+    t : np.float64
+        The current time.
     x : np.ndarray
-        Current state vector (positions and velocities)
+        The current state vector.
 
     Returns:
     --------
     np.ndarray
-        Updated state vector after one RK4 step
-
-    Note: This is a helper function that implements the RK4 algorithm. It computes intermediate slopes (k1, k2, k3, k4) and combines them to produce the final updated state vector.
+        The updated state vector resulting from the RK4 weighted slopes (k1-k4).
     """
     k1 = fun(t, x)
     k2 = fun(t + dt / 2, x + dt / 2 * k1)
@@ -106,37 +128,47 @@ def _rk4_step(fun, dt, t, x):
 
 
 # ----------------------------- Symplectic integrators -----------------------------
-def velocity_verlet(masses, state_vector, force_fn, dt, t):
+def velocity_verlet(
+    masses: list[float],
+    state_vector: list | np.ndarray,
+    field: Callable[[list[float], np.ndarray], np.ndarray],
+    dt: np.float64,
+    t: np.float64,
+) -> np.ndarray:
     """
-    Perform a single Velocity Verlet step.
+    Propagate the system state using the Velocity Verlet symplectic integrator.
+
+    Velocity Verlet is a second-order symplectic method specifically designed for
+    conservative Hamiltonian systems (like gravity). By staggering the velocity
+    and position updates, it precisely preserves the phase-space volume, resulting
+    in exceptional long-term energy stability without the computational overhead
+    of higher-order methods like RK4.
 
     Parameters:
     -----------
-    masses : list of float
-        List of masses for the bodies in the system
+    masses : list[float]
+        List of masses for the N bodies in the system.
     state_vector : np.ndarray
-        Flattened array containing the positions and velocities of all bodies
-    force_fn : function
-        Function that computes the accelerations for the bodies based on their positions
-    dt : float
-        Time step for the integration
-    t : float
-        Current time
+        A flattened 1D array of length 6N containing the concatenated positions
+        and velocities of all bodies.
+    field : Callable
+        A callable vector field that computes accelerations given the spatial configuration.
+    dt : np.float64
+        The temporal step size for the integration.
+    t : np.float64
+        The current simulation time.
 
     Returns:
     --------
     np.ndarray
-        Updated state vector after one Velocity Verlet step
-
-    Note: The Velocity Verlet method is a symplectic integrator that is particularly well-suited for Hamiltonian systems, as it better conserves energy over long simulations compared to non-symplectic methods like Euler or RK4.
-    It updates positions based on current velocities and accelerations, then computes new accelerations based on the updated positions, and finally updates velocities using the average of the old and new accelerations.
+        The updated 1D state vector after one Velocity Verlet time step.
     """
     n = len(masses)
     pos = state_vector[: n * 3].reshape(n, 3)
     vel = state_vector[n * 3 :].reshape(n, 3)
-    a_n = force_fn(masses, pos)
+    a_n = field(masses, pos)
     pos_new = pos + vel * dt + 0.5 * a_n * dt**2
-    a_new = force_fn(masses, pos_new)
+    a_new = field(masses, pos_new)
     vel_new = vel + 0.5 * (a_n + a_new) * dt
     new_state = np.empty_like(state_vector)
     new_state[: n * 3] = pos_new.flatten()
@@ -145,48 +177,52 @@ def velocity_verlet(masses, state_vector, force_fn, dt, t):
 
 
 # ----------------------------- Helper functions -----------------------------
-def _derivative(masses, force_fn, n):
+def _derivative(
+    masses: list[float], field: Callable[[list[float], np.ndarray], np.ndarray], n: int
+):
     """
-    Create a function that computes the derivative of the state vector (positions and velocities) given the current time and state.
+    Generate a phase-space derivative map for non-symplectic integrators.
+
+    This function closes over the system properties (masses, force field, and body count)
+    to produce a standard first-order ODE derivative function compliant with generic
+    integration schemes like RK4.
 
     Parameters:
     -----------
-    masses : list of float
-        List of masses for the bodies in the system
-    force_fn : function
-        Function that computes the accelerations for the bodies based on their positions
+    masses : list[float]
+        List of body masses.
+    field : Callable
+        Function calculating instantaneous acceleration.
     n : int
-        Number of bodies in the system
+        The total number of bodies.
 
     Returns:
     --------
-    function
-        A function that takes time t and state_vector as input and returns the derivative of the state vector (velocities and accelerations)
-
-    Note: This function is used to create the derivative function needed for ODE integrators like Euler and RK4. It extracts positions and velocities from the state vector, computes accelerations using the provided force function, and returns the combined derivative vector.
+    Callable
+        A closure function `f(t, state_vector)` that computes the coupled time
+        derivatives of positions and velocities.
     """
 
-    def f(t, state_vector):
+    def f(t: np.float64, state_vector: np.ndarray) -> np.ndarray:
         """
-        Compute the derivative of the state vector.
+        Evaluate the phase-space time derivative mapping.
 
         Parameters:
         -----------
-        t : float
-            Current time
+        t : np.float64
+            Current simulation time.
         state_vector : np.ndarray
-            Flattened array containing the positions and velocities of all bodies
+            Flattened state vector (positions and velocities).
 
         Returns:
         --------
         np.ndarray
-            Derivative of the state vector (velocities and accelerations)
-
-        Note: The first half of the returned vector contains the velocities (derivative of positions), and the second half contains the accelerations (derivative of velocities) computed from the force function.
+            Flattened derivative vector where the first half contains velocities
+            (d/dt positions) and the second half contains accelerations (d/dt velocities).
         """
         pos = state_vector[: n * 3].reshape(n, 3)
         vel = state_vector[n * 3 :].reshape(n, 3)
-        accs = force_fn(masses, pos)
+        accs = field(masses, pos)
         return np.concatenate([vel.flatten(), accs.flatten()])
 
     return f

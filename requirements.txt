@@ -1,2 +1,4 @@
-numpy
-matplotlib
+# Neutral Physics Engine v4.0.0 dependencies
+numpy>=1.26.0
+matplotlib>=3.8.0
+h5py>=3.10.0

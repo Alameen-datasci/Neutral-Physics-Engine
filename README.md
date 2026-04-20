@@ -1,121 +1,112 @@
 # Neutral Physics Engine
 
-[![Python Version](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
+[![Python Version](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![GitHub Issues](https://img.shields.io/github/issues/Alameen-datasci/Neutral-Physics-Engine.svg)](https://github.com/Alameen-datasci/Neutral-Physics-Engine/issues)
 [![GitHub Stars](https://img.shields.io/github/stars/Alameen-datasci/Neutral-Physics-Engine.svg)](https://github.com/Alameen-datasci/Neutral-Physics-Engine/stargazers)
 
-A modular, high-precision Python physics engine for simulating gravitational N-body systems using Newtonian mechanics. It supports multiple numerical integrators, collision handling, adaptive time-stepping, and comprehensive post-simulation analysis for energy and momentum conservation. Ideal for educational purposes, research prototypes, or exploring celestial mechanics like planetary orbits.
+**Neutral Physics Engine** is a modular, high-performance Python library for simulating gravitational N-body systems using Newtonian mechanics. It combines classical integrators with a Barnes-Hut octree for efficient force calculations (O(N log N)), adaptive time-stepping, collision handling, and professional-grade HDF5 telemetry output.
 
-The engine powers simulations such as Sun-Earth orbital dynamics, demonstrating long-term stability and physical accuracy.
+Designed for **research, education, and professional use**, the engine is particularly suited for studying planetary dynamics, binary star systems, star clusters, and other gravitational problems where long-term stability and energy/momentum conservation are critical.
 
 ## 🚀 Key Features
 
-- **Flexible Numerical Integrators**:
-  - **Euler**: Simple first-order method for quick prototyping.
-  - **Runge-Kutta 4 (RK4)**: High-accuracy for complex trajectories.
-  - **Velocity Verlet**: Symplectic integrator for excellent energy conservation in Hamiltonian systems.
-- **Core Physics**:
-  - Newtonian gravity with O(N²) force calculations.
-  - Collision detection and resolution with configurable coefficient of restitution (default: 0.8).
-  - Adaptive time-stepping for handling stiff dynamics (e.g., close encounters) while optimizing performance.
-- **Advanced Analysis & Visualization**:
-  - Real-time logging of kinetic, potential, and total energy.
-  - Momentum tracking (linear and angular) relative to the center of mass.
-  - Post-simulation tools: Relative energy error, drift rate, 3D trajectory projections (xy, xz, yz), and momentum plots.
-  - Built-in Matplotlib integration for insightful visualizations.
-- **Extensibility**:
-  - Easy to add custom bodies, forces, or integrators.
-  - Placeholders for rotational dynamics (quaternions and angular velocity).
-- **Performance & Stability**:
-  - NumPy-optimized computations.
-  - Error tolerances and safety factors for adaptive stepping.
+- **Efficient Gravitational Solver**: Barnes-Hut octree implementation enabling scalable N-body simulations (far beyond O(N²) limits).
+- **Numerical Integrators**:
+  - Euler (first-order)
+  - Runge-Kutta 4 (high accuracy)
+  - **Velocity Verlet** (symplectic – excellent long-term energy conservation)
+- **Adaptive Time-Stepping**: Automatic step-size control based on local truncation error for handling close encounters and stiff dynamics.
+- **Collision Detection & Resolution**: Octree-accelerated sphere collision detection with impulse-based response and positional correction.
+- **High-Performance I/O**: Buffered, compressed HDF5 logging of positions, velocities, energies, and momenta.
+- **Comprehensive Analysis Tools**: Energy conservation diagnostics, relative error plots, momentum tracking, and 2D/3D trajectory projections.
+- **Modular & Extensible**: Clean object-oriented design with clear separation of concerns (Body, GravityField, Simulation, Analysis, etc.).
 
 ## 🛠️ Installation
 
-### Prerequisites
-- Python 3.8 or higher.
-- Virtual environment recommended (e.g., via `venv` or `conda`).
+### 1. Clone the Repository
+```bash
+git clone https://github.com/Alameen-datasci/Neutral-Physics-Engine.git
+cd Neutral-Physics-Engine
+```
 
-1. **Clone the Repository**:
-    ```bash
-    git clone https://github.com/Alameen-datasci/Neutral-Physics-Engine.git
-    cd Neutral-Physics-Engine
-    ```
+### 2. Install Dependencies
+```bash
+pip install -r requirements.txt
+```
 
-2. **Set Up a Virtual Environment** (optional but recommended):
-    ```bash
-    python -m venv .venv
-    source .venv/bin/activate  # On Unix/macOS
-    .venv\Scripts\activate     # On Windows
-    ```
+### 3. Install the Package (Recommended)
+```bash
+pip install -e .
+```
 
-3. **Install Dependencies:**
-The project uses NumPy for computations and Matplotlib for plotting. Install via:
-    ```bash
-    pip install -r requirements.txt
-    ```
-    (If requirements.txt is missing, run pip install numpy matplotlib.)
+This allows you to import the engine as neutral_physics_engine from anywhere.
 
 ## 💻 Quick Start
-Run the default simulation (a year-long Sun-Earth orbital model using RK4):
-```bash
-python main.py
-```
-
-This will:
-
-- Simulate the system for ~31.5 million seconds (1 year).
-- Generate analysis plots: Energy error, components, trajectory projections, and momentum conservation.
-- Output the energy drift rate for validation.
-
-### Customizing the Simulation
-Edit `main.py` to experiment:
-
-- **Switch Integrators:** Replace integrator=rk4 with euler or velocity_verlet.
-- **Add Bodies:** Extend the bodies list with new Body instances.
-- **Adjust Parameters:** Modify dt (initial time step), T (total time), or restitution.
-
-Example snippet for a custom three-body system:
+### Example: Inner Solar System (1-year simulation)
 ```python
-from body import Body
-from simulation import Simulation
-from analysis import Analysis
-from integrators import velocity_verlet
-from forces import forces
+from neutral_physics_engine.body import Body
+from neutral_physics_engine.simulation import Simulation
+from neutral_physics_engine.gravity_field import GravityField
+from neutral_physics_engine.integrators import velocity_verlet
+from neutral_physics_engine.io import HDF5Writer
 
-# Define bodies (e.g., Sun, Earth, Moon)
-sun = Body(mass=1.989e30, pos=[0, 0, 0], vel=[0, 0, 0], radius=6.96e8)
-earth = Body(mass=5.972e24, pos=[1.49e11, 0, 0], vel=[0, 29780, 0], radius=6.371e6)
-moon = Body(mass=7.342e22, pos=[1.49e11 + 3.84e8, 0, 0], vel=[0, 29780 + 1022, 0], radius=1.737e6)
-bodies = [sun, earth, moon]
+# Define bodies
+sun = Body(mass=1.989e30, pos=[0.0, 0.0, 0.0], vel=[0.0, 0.0, 0.0], radius=6.9634e8)
+mercury = Body(mass=3.301e23, pos=[5.79e10, 0.0, 0.0], vel=[0.0, 47400.0, 0.0], radius=2.44e6)
+# ... add Venus, Earth, Mars similarly
 
-# Run simulation
-sim = Simulation(bodies=bodies, integrator=velocity_verlet, force_fn=forces, dt=3600)
-sim.run(365.25 * 24 * 3600)  # 1 year
+bodies = [sun, mercury, venus, earth, mars]
 
-# Analyze
-analysis = Analysis(sim)
-analysis.plot_projection(planes=["xy"])
-analysis.relative_energy_error()
+with HDF5Writer(
+    filename="results/inner_solar_system.h5",
+    n_bodies=len(bodies),
+    buffer_size=1000,
+    metadata={"simulation": "inner_solar_system", "integrator": "velocity_verlet"}
+) as writer:
+
+    gravity = GravityField(theta=0.5)
+    sim = Simulation(
+        bodies=bodies,
+        field=gravity,
+        integrator=velocity_verlet,
+        dt=3600,                    # 1 hour initial step
+        hdf5_writer=writer
+    )
+    sim.run(365.25 * 24 * 3600)     # 1 year
 ```
 
-## 📊 Example Outputs
+### Analysis
+```python
+from neutral_physics_engine.analysis import Analysis
 
-- **Trajectory Projections:** 2D views of orbits in specified planes.
-- **Energy Plots:** Demonstrate conservation with minimal drift using advanced integrators.
-- **Momentum Graphs:** Verify linear and angular momentum stability.
+with Analysis("results/inner_solar_system.h5") as analysis:
+    analysis.relative_energy_error()
+    analysis.plot_energy_components()
+    analysis.plot_projection(planes=["xy", "xz"])
+    print("Energy drift rate:", analysis.energy_drift_rate())
+```
 
-Running the simulation generates these visuals directly, showcasing the project's analytical capabilities.
+## 📊 Scientific Validation
+The engine conserves linear and angular momentum to machine precision and exhibits bounded energy error when using the symplectic Velocity Verlet integrator. Barnes-Hut acceleration with `theta ≈ 0.5` provides an excellent accuracy–performance trade-off for large-N systems.
+## 📚 Academic & Research Use Cases
 
-## 🔍 Skills Demonstrated
+- Celestial mechanics and orbital dynamics
+- Star cluster evolution
+- Planetary formation studies
+- Spacecraft trajectory planning
+- Educational demonstrations of numerical methods and conservation laws
 
-- **Computational Physics:** Implementation of gravitational forces, integrators, and conservation laws.
-- **Software Design:** Modular architecture with classes for bodies, simulations, and analysis.
-- **Numerical Methods:** Adaptive time-stepping and error control for efficient, accurate simulations.
-- **Data Visualization:** Using Matplotlib for professional-grade plots.
-- **Problem-Solving:** Handling edge cases like collisions and singularities.
+See `examples/` folder for ready-to-run simulations (Sun-Earth, Inner Solar System, Binary Stars, Random N-body).
 
-This project can be highlighted in resumes or portfolios to illustrate hands-on experience in building simulation tools.
+## 🔬 Skills Demonstrated
 
-See `CHANGELOG.md` for development history.
+- Advanced numerical methods in computational physics
+- High-performance spatial algorithms (Barnes-Hut octree)
+- Symplectic integration and adaptive stepping
+- Scientific data management (HDF5)
+- Modular software architecture for research tools
+
+---
+See `CHANGELOG.md` for the complete development history.
+---
