@@ -48,6 +48,8 @@ class Simulation:
         integrator,
         field,
         dt: int,
+        time_stepping: str = "adaptive",
+        enable_collisions: bool = True,
         restitution: int = 0.8,
         hdf5_writer: HDF5Writer | None = None,
     ):
@@ -64,6 +66,8 @@ class Simulation:
             The gravitational field compute instance (utilizing the Octree).
         dt : float
             The initial proposed time step in seconds.
+        time_stepping : str
+            Time-stepping strategy ('adaptive' or 'fixed', default 'adaptive').
         restitution : float, optional
             Coefficient of restitution for collisions [0.0, 1.0] (default 0.8).
         hdf5_writer : HDF5Writer | None, optional
@@ -72,9 +76,20 @@ class Simulation:
         self.bodies = bodies
         self.integrator = integrator
         self.field = field
+
+        if dt <= 0 or not np.isfinite(dt):
+            raise ValueError("Time step dt must be a positive finite number.")
         self.dt = dt
-        self.t = 0
+
+        if time_stepping not in ["adaptive", "fixed"]:
+            raise ValueError("time_stepping must be either 'adaptive' or 'fixed'.")
+        self.time_stepping = time_stepping
+
+        if restitution < 0.0 or restitution > 1.0:
+            raise ValueError("Coefficient of restitution must be in the range [0.0, 1.0].")
         self.restitution = restitution
+
+        self.t = 0
         self.kinetic = 0.0
         self.potential = 0.0
         self.total = 0.0
@@ -95,29 +110,35 @@ class Simulation:
         self.masses = np.array([b.mass for b in self.bodies])  # Precompute masses for efficiency
         self.pos = np.array([b.pos for b in self.bodies])  # Precompute positions for efficiency
         self.vel = np.array([b.vel for b in self.bodies])  # Precompute velocities for efficiency
+        self.enable_collisions = enable_collisions
+        if self.enable_collisions:
+            self.radii = np.array([b.radius for b in self.bodies])  # Precompute radii for collision detection
+            self.collision_system = CollisionSystem(
+                self.masses, self.pos, self.vel, self.radii, self.restitution
+            )  # Initialize the collision system with the current state of the bodies
+        else:
+            self.collision_system = None
         self.hdf5_writer = hdf5_writer
         self._log_state()  # Log the initial state of the system
 
     def step(self) -> None:
-        """
-        Advance the simulation by a single adaptive time step.
+        # If using fixed time stepping, perform a single integration step to update the system state. The current state is packed into a phase-space vector, passed to the integrator along with the masses, gravitational field, time step, and current time to compute the new state of the system.
+        if self.time_stepping == "fixed":
+            state = self._pack_state()  # Pack the current state into a phase-space vector
+            new_state = self.integrator(self.masses, state, self.field, self.dt, self.t)  # Integrate to get the new state
+            used_dt = self.dt  # The actual time step used is the fixed dt
+        else:  # If using adaptive time stepping
+            # Perform adaptive time step to get the new state and the actual time step used
+            new_state, used_dt = self._adaptive_step()
 
-        This process involves:
-        1. Determining the optimal step size and calculating the new kinematic state.
-        2. Unpacking the phase-space vector back to individual bodies.
-        3. Detecting and resolving spatial overlaps (collisions).
-        4. Computing diagnostics (energies, momenta) and logging the state.
-        """
-        # Perform adaptive time step to get the new state and the actual time step used
-        new_state, used_dt = self._adaptive_step()
         # Update the bodies' positions and velocities from the new state vector
         self._unpack_state(new_state)
-        # Update precomputed positions after unpacking the new state
-        self.pos = np.array([b.pos for b in self.bodies])
-        # Update precomputed velocities after unpacking the new state
-        self.vel = np.array([b.vel for b in self.bodies])
+
         self.t += used_dt  # Update the current time by the actual time step used
-        self._handle_collisions()  # Check for and resolve any collisions between bodies based on their updated positions
+        
+        if self.enable_collisions:
+            self._handle_collisions()  # Check for and resolve any collisions between bodies based on their updated positions
+        
         self._log_state()  # Log the current state of the system, including energies and trajectories, for later analysis or visualization
 
     def run(self, T: np.float64) -> None:
@@ -142,6 +163,9 @@ class Simulation:
                 self.dt = (
                     old_dt  # Restore the original time step for future steps if needed
                 )
+
+                self.t = T  # Ensure the simulation time is set to T after the final step
+                break  # Exit the loop since we've reached the target simulation time
             else:  # If the next step does not exceed T, simply perform a regular step
                 self.step()
 
@@ -157,31 +181,22 @@ class Simulation:
         np.ndarray
             1D array of shape (N*6,) representing the full system state.
         """
-        return np.concatenate(
-            (
-                np.array([b.pos for b in self.bodies]).flatten(),
-                np.array([b.vel for b in self.bodies]).flatten(),
-            )
-        )
+        return np.concatenate((self.pos.flatten(), self.vel.flatten()))
 
     def _unpack_state(self, state: np.ndarray) -> None:
         """
-        Distribute a flattened phase-space vector back into the system's Body objects.
-
-        Parameters:
-        -----------
-        state : np.ndarray
-            1D array of shape (N*6,) containing concatenated positions and velocities.
+        Distribute a flattened phase-space vector directly into the system's 
+        NumPy arrays, then sync the Body objects.
         """
         n = len(self.bodies)
-        pos = state[: n * 3].reshape(n, 3)
-        vel = state[n * 3 :].reshape(n, 3)
+        self.pos[:] = state[: n * 3].reshape(n, 3)
+        self.vel[:] = state[n * 3 :].reshape(n, 3)
 
         for i, b in enumerate(self.bodies):
-            b.pos = pos[i]
-            b.vel = vel[i]
+            b.pos = self.pos[i]
+            b.vel = self.vel[i]
 
-    def _compute_error(self, state: np.ndarray, dt: np.float64):
+    def _compute_error(self, state: np.ndarray, dt: np.float64) -> tuple[float, np.ndarray]:
         """
         Estimate the local truncation error of the current time step using
         Richardson extrapolation (step doubling).
@@ -247,26 +262,14 @@ class Simulation:
 
     def _handle_collisions(self) -> None:
         """
-        Delegate spatial intersection testing and impulse resolution to the
-        CollisionSystem, updating the internal state arrays post-resolution.
+        Trigger the persistent CollisionSystem to resolve overlaps, 
+        then sync the corrected kinematics back to the Body objects.
         """
-        # extracting parameters for collision
-        masses = self.masses
-        positions = self.pos
-        velocities = self.vel
-        radii = np.array([b.radius for b in self.bodies])
-        # resolving collisions
-        collision = CollisionSystem(
-            masses, positions, velocities, radii, self.restitution
-        )
-        collision.resolve_collisions()
+        self.collision_system.resolve_collisions()
         # updating position and velocity
         for k, b in enumerate(self.bodies):
-            b.pos = positions[k]
-            b.vel = velocities[k]
-
-        self.pos = positions
-        self.vel = velocities
+            b.pos = self.pos[k]
+            b.vel = self.vel[k]
 
     def _compute_energy(self) -> tuple[float, float]:
         """
@@ -281,7 +284,7 @@ class Simulation:
         PE = self.field.compute_potential(self.masses, self.pos)
         return KE, PE
 
-    def _adaptive_step(self):
+    def _adaptive_step(self) -> tuple[np.ndarray, float]:
         """
         Determine and apply the optimal time step satisfying error tolerances.
 
@@ -300,9 +303,9 @@ class Simulation:
             The accepted phase-space state vector and the `dt` value used to reach it.
         """
         state = self._pack_state()
-        p = self.order_map[self.integrator.__name__]
+        p = self.order_map.get(self.integrator.__name__)
         if p is None:  # Check if the integrator is recognized
-            raise ValueError("Unknown integrator order")
+            raise ValueError(f"Unknown integrator order: {self.integrator.__name__}")
         dt = self.dt  # Start with the current time step for the integration
         while True:
             error, y_new = self._compute_error(state, dt)

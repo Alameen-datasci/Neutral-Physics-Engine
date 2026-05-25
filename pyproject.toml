@@ -4,15 +4,26 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "neutral-physics-engine"
-version = "4.0.0"
-description = "A high-performance, modular N-body gravitational physics engine for Python. Features Barnes-Hut octree (O(N log N)), Velocity Verlet symplectic integration, adaptive time-stepping, collision resolution, and HDF5 telemetry output. Designed for research, education, and professional celestial mechanics simulations."
+version = "4.1.0"
+description = "A high-performance modular physics engine for Python featuring Barnes-Hut spatial acceleration, adaptive time stepping, collision handling, and HDF5 telemetry."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { file = "LICENSE" }
 authors = [
     { name = "Al Ameen" }
 ]
-keywords = ["physics", "n-body", "gravity", "simulation", "barnes-hut", "celestial-mechanics", "hdf5"]
+keywords = [
+    "physics",
+    "simulation",
+    "gravity",
+    "gravitational-dynamics",
+    "barnes-hut",
+    "collision-detection",
+    "numerical-integration",
+    "scientific-computing",
+    "celestial-mechanics",
+    "hdf5",
+]
 
 dependencies = [
     "numpy>=1.26",

@@ -51,6 +51,16 @@ class Node:
     instantiation outside the tree-building process.
     """
 
+    __slots__ = (
+        "center",
+        "half_side",
+        "body_index",
+        "children",
+        "mass",
+        "com",
+        "max_radius",
+    )
+
     def __init__(self, center: list[float] | np.ndarray, half_side: np.float64):
         """
         Initialize a new octree node.
@@ -102,9 +112,9 @@ class Octree:
 
     def __init__(
         self,
-        masses: list[float] | np.ndarray,
-        pos: list[float] | np.ndarray,
-        radii: list[float] | np.ndarray | None = None,
+        masses: np.ndarray,
+        pos: np.ndarray,
+        radii: np.ndarray | None = None,
         theta: np.float64 = 0.5,
     ):
         """
@@ -112,11 +122,11 @@ class Octree:
 
         Parameters:
         -----------
-        masses : list[float] | np.ndarray
+        masses : np.ndarray
             List of body masses (length N)
-        pos : list[float] | np.ndarray
+        pos : np.ndarray
             List of body positions (N arrays/vectors of shape (3,))
-        radii : list[float] | np.ndarray | None, optional
+        radii : np.ndarray | None, optional
             List of body radii for collision detection (length N). If None,
             collision methods will raise an error.
         theta : np.float64, optional
@@ -148,23 +158,8 @@ class Octree:
                 "Cannot build octree: positions array must contain at least one body"
             )
 
-        x0, y0, z0 = self.pos[0]
-
-        xmin = xmax = x0
-        ymin = ymax = y0
-        zmin = zmax = z0
-
-        for p in self.pos[1:]:
-            x, y, z = p
-
-            xmin = min(xmin, x)
-            xmax = max(xmax, x)
-
-            ymin = min(ymin, y)
-            ymax = max(ymax, y)
-
-            zmin = min(zmin, z)
-            zmax = max(zmax, z)
+        xmin, ymin, zmin = np.min(self.pos, axis=0)
+        xmax, ymax, zmax = np.max(self.pos, axis=0)
 
         dx = xmax - xmin
         dy = ymax - ymin
@@ -302,14 +297,15 @@ class Octree:
         int
             Octant index (0 ≤ index ≤ 7)
         """
-        diff = np.subtract(pos, node.center)
-        ix = 1 if diff[0] >= 0 else 0
-        iy = 1 if diff[1] >= 0 else 0
-        iz = 1 if diff[2] >= 0 else 0
+        px, py, pz = pos
+        cx, cy, cz = node.center
+        ix = 1 if px >= cx else 0
+        iy = 1 if py >= cy else 0
+        iz = 1 if pz >= cz else 0
         return ix * 4 + iy * 2 + iz
 
     # --------------------- Force calculation ---------------------
-    def compute_acceleration(self, i: int):
+    def compute_acceleration(self, i: int) -> np.ndarray:
         """
         Compute the gravitational acceleration on body i using the Barnes-Hut
         approximation.
@@ -326,43 +322,58 @@ class Octree:
         np.ndarray
             Acceleration vector (shape (3,)) acting on body i
         """
-        return self._compute_node_forces(self.root, i)
+        acc = np.zeros(3, dtype=np.float64)
+        self._compute_node_forces(self.root, i, acc)
+        return acc
 
-    def _compute_node_forces(self, node: Node, i: int):
+    def _compute_node_forces(self, node: Node, i: int, acc: np.ndarray):
         """
         Recursively compute the acceleration on body i due to the subtree rooted
         at `node`, applying the Barnes-Hut opening-angle criterion.
         """
         if node.mass < EPS:
-            return np.zeros(3)
-
-        a_i = np.zeros(3)
+            return
 
         if node.children is None and node.body_index == i:
-            return np.zeros(3)
+            return
 
         if node.children is None and node.body_index != i:
             j = node.body_index
-            disp = np.subtract(self.pos[j], self.pos[i])
-            dist = max(np.linalg.norm(disp), EPS)
-            f_common = G / (dist**3)
-            return f_common * self.masses[j] * disp
+            dx = self.pos[j, 0] - self.pos[i, 0]
+            dy = self.pos[j, 1] - self.pos[i, 1]
+            dz = self.pos[j, 2] - self.pos[i, 2]
+            dist_sq = dx*dx + dy*dy + dz*dz
+            inv_dist = 1.0 / max(np.sqrt(dist_sq), EPS)
+            inv_dist3 = inv_dist * inv_dist * inv_dist
+            f_common = G * self.masses[j] * inv_dist3
 
-        if node.children is not None:
-            s = node.half_side * 2
-            r = np.subtract(node.com, self.pos[i])
-            d = np.linalg.norm(r)
-            if d < EPS:
-                d = EPS
-            if s / d < self.theta:
-                grav_coeff = G / (d**3)
-                return grav_coeff * node.mass * r
-            else:
-                for child in node.children:
-                    if child.mass == 0:
-                        continue
-                    a_i += self._compute_node_forces(child, i)
-                return a_i
+            acc[0] += f_common * dx
+            acc[1] += f_common * dy
+            acc[2] += f_common * dz
+            return
+
+        # Now Internal node is left
+        s = node.half_side * 2
+        rx = node.com[0] - self.pos[i, 0]
+        ry = node.com[1] - self.pos[i, 1]
+        rz = node.com[2] - self.pos[i, 2]
+        d_sq = rx*rx + ry*ry + rz*rz
+        d = max(np.sqrt(d_sq), EPS)
+
+        if s / d < self.theta:
+            inv_d = 1.0 / d
+            inv_d3 = inv_d * inv_d * inv_d
+            factor = G * node.mass * inv_d3
+            acc[0] += factor * rx
+            acc[1] += factor * ry
+            acc[2] += factor * rz
+            return
+
+        else:
+            for child in node.children:
+                if child.mass == 0:
+                    continue
+                self._compute_node_forces(child, i, acc)
 
     def compare_with_direct(self, i: int) -> tuple:
         """
@@ -386,9 +397,17 @@ class Octree:
         for j in range(len(self.masses)):
             if i == j:
                 continue
-            dr = np.subtract(self.pos[j], self.pos[i])
-            r = max(np.linalg.norm(dr), EPS)
-            direct_acc += G * self.masses[j] / r**3 * dr
+            dx = self.pos[j, 0] - self.pos[i, 0]
+            dy = self.pos[j, 1] - self.pos[i, 1]
+            dz = self.pos[j, 2] - self.pos[i, 2]
+            dist_sq = dx*dx + dy*dy + dz*dz
+            r = max(np.sqrt(dist_sq), EPS)
+            inv_r = 1.0 / r
+            inv_r3 = inv_r * inv_r * inv_r
+            factor = G * self.masses[j] * inv_r3
+            direct_acc[0] += factor * dx
+            direct_acc[1] += factor * dy
+            direct_acc[2] += factor * dz
         return tree_acc, direct_acc, np.linalg.norm(tree_acc - direct_acc)
 
     # --------------------- Collision detection ---------------------
@@ -428,9 +447,9 @@ class Octree:
         else:
             dz = 0
 
-        return np.sqrt(dx**2 + dy**2 + dz**2)
+        return np.sqrt(dx*dx + dy*dy + dz*dz)
 
-    def find_collisions(self):
+    def find_collisions(self) -> list[tuple[int, int]]:
         """
         Find all pairs of bodies whose spheres intersect.
 
@@ -450,7 +469,7 @@ class Octree:
             self._traverse_for_collisions(self.root, i)
         return self.collision_pairs
 
-    def _traverse_for_collisions(self, node: Node, i: int):
+    def _traverse_for_collisions(self, node: Node, i: int) -> None:
         """
         Recursively traverse the subtree for collisions involving body i.
         """
@@ -472,7 +491,10 @@ class Octree:
             else:
                 p_j, r_j = self.pos[j], self.radii[j]
 
-                distance = np.linalg.norm(p_i - p_j)
+                dx = p_i[0] - p_j[0]
+                dy = p_i[1] - p_j[1]
+                dz = p_i[2] - p_j[2]
+                distance = np.sqrt(dx*dx + dy*dy + dz*dz)
 
                 if distance < (r_i + r_j):
                     if i < j:
@@ -484,7 +506,7 @@ class Octree:
                 self._traverse_for_collisions(child, i)
 
     # --------------------- Potential energy calculation ---------------------
-    def compute_potential(self, i: int):
+    def compute_potential(self, i: int) -> float:
         """
         Compute the gravitational potential at body i due to all other bodies
         using the Barnes-Hut approximation.
@@ -503,7 +525,7 @@ class Octree:
         """
         return self._compute_node_potential(self.root, i)
 
-    def _compute_node_potential(self, node: Node, i: int):
+    def _compute_node_potential(self, node: Node, i: int) -> float:
         """
         Recursively compute the potential at body i from the subtree rooted at
         `node`, applying the same Barnes-Hut criterion as force calculation.
@@ -520,21 +542,28 @@ class Octree:
                 return 0.0
             else:
                 j = node.body_index
-                disp = np.subtract(self.pos[j], self.pos[i])
-                dist = max(np.linalg.norm(disp), EPS)
-                return -G * self.masses[j] / dist
+                dx = self.pos[j, 0] - self.pos[i, 0]
+                dy = self.pos[j, 1] - self.pos[i, 1]
+                dz = self.pos[j, 2] - self.pos[i ,2]
+                dist_sq = dx*dx + dy*dy + dz*dz
+                dist = max(np.sqrt(dist_sq), EPS)
+                inv_dist = 1.0 / dist
+                return -G * self.masses[j] * inv_dist
 
         # Case Two: Internal Node
-        if node.children is not None:
-            s = node.half_side * 2
-            r = np.subtract(node.com, self.pos[i])
-            d = max(np.linalg.norm(r), EPS)
+        s = node.half_side * 2
+        rx = node.com[0] - self.pos[i, 0]
+        ry = node.com[1] - self.pos[i, 1]
+        rz = node.com[2] - self.pos[i, 2]
+        d_sq = rx*rx + ry*ry + rz*rz
+        d = max(np.sqrt(d_sq), EPS)
 
-            if s / d < self.theta:
-                return -G * node.mass / d
-            else:
-                for child in node.children:
-                    if child.mass == 0:
-                        continue
-                    phi_i += self._compute_node_potential(child, i)
-                return phi_i
+        if s / d < self.theta:
+            inv_d = 1.0 / d
+            return -G * node.mass * inv_d
+        else:
+            for child in node.children:
+                if child.mass == 0:
+                    continue
+                phi_i += self._compute_node_potential(child, i)
+            return phi_i

@@ -5,7 +5,37 @@ All notable changes to the "Neutral Physics Engine" project will be documented i
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] / [v4.0.0]
+## [v4.1.0]
+### Added
+- **Fixed Time-Stepping Mode**: Added a `time_stepping` parameter (`"adaptive"` or `"fixed"`) to the `Simulation` class, allowing users to bypass adaptive truncation error checks for faster, predictable constant-step integration.
+- **Collision Toggling**: Added an `enable_collisions` boolean flag to `Simulation`. Disabling it skips the `CollisionSystem` initialization and per-step checks entirely, optimizing pure N-body gravity simulations.
+- **Benchmarking Suite**: Introduced a comprehensive `benchmarks/` directory to track engine performance, complexity scaling, and numerical stability across different subsystems.
+  - `scaling.py` & `theta_tradeoff.py`: Validates the O(N log N) time complexity of the Barnes-Hut spatial partitioning and measures the accuracy tradeoff of the `theta` opening angle.
+  - `collision_stress.py`: Isolates and stresses the broad-phase octree pair-finding logic.
+  - `hdf5_performance.py`: Evaluates disk I/O overhead and file size footprints for the new HDF5 telemetry writer at various buffer sizes.
+  - `integrator_comparison.py` & `adaptive_stepping.py`: Quantifies energy drift and execution time across different numerical integrators (Euler, RK4, Velocity Verlet) and time-stepping modes.
+- **New Unit Tests**: 
+  - `test_collision.py`: Validates the `CollisionSystem` by simulating both perfectly elastic (restitution=1.0) and perfectly inelastic (restitution=0.0) 3D collisions to ensure correct momentum transfer and velocity updates.
+  - `test_octree.py`: Verifies the Barnes-Hut spatial partitioning logic, testing mass aggregation, center-of-mass derivations, and confirming that the tree's acceleration approximation closely matches exact direct summation.
+
+### Changed
+- **Memory Footprint Optimization**: Implemented `__slots__` in the `Body` (`body.py`) and `Node` (`octree.py`) classes. This drastically reduces the memory overhead per instance and speeds up attribute access, which is critical for large N-body counts.
+- **Math Overhead Reduction (Hot Loops)**: Replaced heavy NumPy function calls (`np.subtract`, `np.linalg.norm`, etc.) with unrolled, explicit 3D scalar math (e.g., `dx*dx + dy*dy + dz*dz`) throughout `octree.py` and `collision.py`. This bypasses NumPy's function dispatch overhead for small 3D vectors.
+- **Allocation Elimination**: 
+  - `Octree._compute_node_forces` now accumulates accelerations into a pre-allocated array passed by reference (`acc`), preventing the creation and garbage collection of thousands of tiny arrays during recursion.
+  - `Simulation._unpack_state` now updates the flat `self.pos` and `self.vel` arrays in-place (`[:]`) rather than reallocating them on every step.
+- **Vectorized Bounding Box**: Refactored the bounding box computation in `Octree.build` to use vectorized `np.min` and `np.max` along axes, replacing the slow Python `for` loop.
+- **Persistent Collision System**: The `Simulation` class now initializes a single, persistent `CollisionSystem` instance during `__init__` (if enabled) rather than recreating it on every single time step.
+- **Type Hinting**: Improved type hints in `octree.py` (e.g., explicit `-> np.ndarray` and `-> float` returns) for better developer experience and static analysis.
+- **Integrator Validation**: Updated `test_integrators.py` to include a 1D harmonic oscillator test. This mathematically proves the symplectic nature (long-term energy conservation) of the Velocity Verlet integrator when compared to the standard Euler method.
+- **Simulation Validation**: Updated `test_simulation.py` to account for the new `time_stepping` and `enable_collisions` configuration flags. Also added a test to verify that `Simulation.run(T)` strictly truncates the final time step to end exactly at `T`.
+
+### Fixed
+- **Simulation Time Truncation**: The `Simulation.run(T)` loop now explicitly snaps `self.t = T` and `break`s after the final adjusted step, preventing floating-point inaccuracies from causing the simulation time to slightly overshoot the target.
+- **Restored Test Suite**: The `pytest` suite in the `tests/` directory is now fully operational and compatible with the new v4.0.0+ architecture (Barnes-Hut, HDF5 I/O, modular collisions). This resolves the known issue from the v4.0.0 release.
+- **Example Files Compatibility**: Updated all example and demonstration scripts to align with the new `src/` package layout and API changes (e.g., updated `Simulation` initialization parameters), ensuring they run out-of-the-box with the v4.0.0+ architecture.
+
+## [v4.0.0] (previous release) Apr 21, 2026
 ### Added
 - **Barnes-Hut Octree (`octree.py`)**: Full O(N log N) spatial partitioning implementation with automatic tree construction, recursive insertion, center-of-mass aggregation, and max-radius tracking for collision culling.
 - **GravityField (`gravity_field.py`)**: High-level callable interface for gravitational accelerations and total potential energy. Includes automatic octree caching to avoid redundant rebuilds within a single time step.
@@ -47,7 +77,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [v3.0.1] (previous release)
+## [v3.0.1] Mar 7, 2026
 ### Added
 - **Modern Package Layout:** Adopted the recommended `src/` layout (`src/neutral_physics_engine/`) for better separation between library code and development/test files.
 - **Initial Test Suite:** Added a `tests/` directory with basic unit tests:
@@ -68,7 +98,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [v3.0]
+## [v3.0] Mar 3, 2026
 ### Added
 - **Analysis Module:** Introduced a new `analysis.py` module with an `Analysis` class for post-simulation evaluation, including methods for calculating and plotting relative energy error, energy components (kinetic, potential, total), energy drift rate, trajectory projections (xy, xz, yz planes), and magnitudes of linear and angular momentum over time.
 - **Adaptive Time-Stepping:** Implemented an adaptive time-step mechanism in `simulation.py` using error estimation (`_compute_error`) and adjustment (`_adaptive_step`) based on integrator order, with configurable tolerances (atol, rtol), safety factor, and min/max dt bounds for improved accuracy and efficiency in dynamic systems.
@@ -92,7 +122,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [v2.5]
+## [v2.5] Feb 16, 2026
 ### Added
 - **Velocity Verlet Integration:** Implemented in `integrators.py` for improved numerical stability and accuracy in simulating particle trajectories.
 
@@ -104,7 +134,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [v2.0]
+## [v2.0] Feb 12, 2026
 ### Added
 - **Universal Gravitation:** Replaced flat-earth gravity with Newton's Law of Universal Gravitation ($F = G \frac{m_1 m_2}{r^2}$) for N-body simulation capability.
 - **Planetary Physics:** Added `Earth` class inheriting from `Body` with standard planetary mass ($5.97 \times 10^{24}$ kg) and radius.
@@ -119,7 +149,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [v1.0]
+## [v1.0] Feb 2, 2026
 ### Added
 - Initial release of the engine.
 - Euler and Runge-Kutta 4 (RK4) numerical integration methods.

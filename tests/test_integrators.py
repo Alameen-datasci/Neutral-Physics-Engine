@@ -114,3 +114,48 @@ def test_velocity_verlet_constant_acceleration():
         [1.01, 0.0, 0.0, 10.01, 0.0, 0.0, 10.2, 0.0, 0.0, 0.2, 0.0, 0.0]
     )
     np.testing.assert_allclose(new_state, expected)
+
+def harmonic_oscillator_field(masses, positions):
+    """
+    A field representing a 1D ideal spring attached to the origin.
+    F = -k * x. Let k = 1.0. Therefore, a = -x / m.
+    """
+    accs = np.zeros_like(positions)
+    for i in range(len(masses)):
+        accs[i, 0] = -positions[i, 0] / masses[i]
+    return accs
+
+def test_integrator_energy_conservation():
+    """
+    Test that Velocity Verlet conserves energy for a harmonic oscillator 
+    much better than Euler integration over many steps.
+    """
+    masses = [1.0]
+    # Start at x=1.0 with 0 velocity. 
+    # Total Energy E = 0.5 * k * x^2 + 0.5 * m * v^2 = 0.5 Joules.
+    initial_state = np.array([1.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+    
+    dt = 0.01
+    steps = 1000
+    
+    state_vv = initial_state.copy()
+    state_eu = initial_state.copy()
+    t = 0.0
+    
+    for _ in range(steps):
+        state_vv = velocity_verlet(masses, state_vv, harmonic_oscillator_field, dt, t)
+        state_eu = euler(masses, state_eu, harmonic_oscillator_field, dt, t)
+        t += dt
+        
+    def calc_energy(state):
+        x, v = state[0], state[3]
+        return 0.5 * 1.0 * x**2 + 0.5 * 1.0 * v**2
+
+    energy_vv = calc_energy(state_vv)
+    energy_eu = calc_energy(state_eu)
+    
+    # Velocity Verlet should stay very close to the initial 0.5J
+    assert np.isclose(energy_vv, 0.5, atol=1e-3)
+    
+    # Euler is non-symplectic and will gain energy unconditionally
+    assert energy_eu > 0.55

@@ -3,7 +3,7 @@ from neutral_physics_engine.analysis import Analysis
 
 # ================================ Result Analysis ================================
 
-filename = "random_n_bodies_realistic.h5"       # Specify the HDF5 file to analyze (e.g., from your simulations)
+filename = "inner_solar_system.h5"       # Specify the HDF5 file to analyze (e.g., from your simulations)
 # You can change this to "simulation_testing_4.h5" or "simulation_testing_6.h5" to analyze those simulations instead.
 with Analysis(f"results/{filename}") as f:
     print("Metadata")                   # Print the metadata stored in the HDF5 file (e.g., simulation parameters, integrator used, etc.)

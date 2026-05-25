@@ -127,15 +127,21 @@ class CollisionSystem:
             m_i, m_j = self.masses[i], self.masses[j]
             r_i, r_j = self.radii[i], self.radii[j]
 
-            delta = np.subtract(p_j, p_i)
-            dist = np.linalg.norm(delta)
+            dx = p_j[0] - p_i[0]
+            dy = p_j[1] - p_i[1]
+            dz = p_j[2] - p_i[2]
+            d_sq = dx*dx + dy*dy + dz*dz
+            dist = np.sqrt(d_sq)
             if dist < 1e-12:
                 n_hat = np.array([1.0, 0.0, 0.0])
                 dist = 1e-12
             else:
-                n_hat = delta / dist
+                n_hat = np.array([dx, dy, dz]) / dist
 
-            v_rel = np.subtract(v_j, v_i)
+            vx = v_j[0] - v_i[0]
+            vy = v_j[1] - v_i[1]
+            vz = v_j[2] - v_i[2]
+            v_rel = np.array([vx, vy, vz])
             # check if bodies are moving apart
             if np.dot(v_rel, n_hat) > 0:
                 continue
@@ -152,7 +158,7 @@ class CollisionSystem:
             slop = 1e-5
             if penetration > slop:
                 percent = 0.8
-                correction = max(penetration - slop, 0) / inv_mass_sum * percent
+                correction = (penetration - slop) / inv_mass_sum * percent
                 # updating positions
                 self.positions[i] -= (correction / m_i) * n_hat
                 self.positions[j] += (correction / m_j) * n_hat

@@ -24,6 +24,15 @@ class Body:
     that the physics solver operates on mathematically and physically sound data.
     """
 
+    __slots__ = (
+        "mass",
+        "pos",
+        "vel",
+        "radius",
+        #"orientation",
+        #"angular_vel",
+    )
+
     def __init__(
         self,
         mass: np.float64,
