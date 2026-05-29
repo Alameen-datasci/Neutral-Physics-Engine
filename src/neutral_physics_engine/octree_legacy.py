@@ -96,7 +96,7 @@ class Node:
 
 
 # ========================== Octree ==========================
-class Octree:
+class OctreeLegacy:
     """
     Barnes-Hut octree for efficient N-body gravity and collision queries.
 

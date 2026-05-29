@@ -13,6 +13,11 @@ venv/
 .env/
 .venv/
 
+# Compiled binaries
+*.so
+*.dylib
+*.o
+
 # Distribution / packaging
 build/
 dist/
