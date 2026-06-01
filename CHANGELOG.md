@@ -5,7 +5,18 @@ All notable changes to the "Neutral Physics Engine" project will be documented i
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [v4.2.0] - 2026-05-29
+## [v4.2.1] - 2026-06-01
+### Added
+- **Python Tree Inspection:** Exposed the underlying C++ `vec3` and `Node` structs to the Python API via Pybind11. Added a `.root` property to the `Octree` class, allowing direct inspection of the spatial tree structure and center-of-mass data from Python.
+
+### Changed
+- **Zero-Copy Memory Interface:** Refactored the C++ `Octree` and Pybind11 wrapper (`pybind11_wrapper.cpp`) to accept raw memory pointers directly from NumPy arrays via `reinterpret_cast`.
+
+### Performance
+- **Allocation Overhead Elimination:** By transitioning from `std::vector` copies to direct raw pointer access, the C++ constructor no longer iterates over the data to allocate memory upon initialization, drastically reducing the overhead bridging Python and C++.
+---
+
+## [v4.2.0] - (previous release) - 2026-05-29
 ### Added
 - **C++ Barnes-Hut Backend**: Ported the core $O(N \log N)$ Octree spatial partitioning logic from Python to a native C++17 implementation (`octree.cpp`) for maximum execution speed.
 - **Pybind11 Integration**: Created a seamless C++-to-Python bridge (`pybind11_wrapper.cpp`) allowing the `GravityField` and `CollisionSystem` to utilize the new compiled backend without any changes to the existing Python API.
@@ -20,12 +31,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Unified Scaling Benchmark**: Updated `benchmarks/scaling.py` to perform a side-by-side comparison of the legacy Python and native C++ Barnes-Hut backends. The script now evaluates tree building, traversal times, and approximation errors for both languages against a shared O(N²) direct summation baseline in a single pass.
 
 ### Performance
-- **Exponential Speedup**: Benchmarks confirm the C++ Octree evaluates forces for $N=3000$ bodies in ~0.0007 seconds, compared to ~0.96 seconds in the legacy Python implementation—an astonishing **16,884x speedup**.
+- **Massive Speedup:** Benchmarks confirm the native C++ Octree evaluates forces in a fraction of the time compared to the legacy Python implementation, delivering an orders-of-magnitude reduction in execution overhead.
 - **Simulation Throughput**: A full 1-year adaptive time-step simulation of the Inner Solar System now executes and logs to HDF5 in approximately **0.10 seconds**.
 
 ---
 
-## [v4.1.0] - (previous release) - 2026-05-25
+## [v4.1.0] - 2026-05-25
 ### Added
 - **Fixed Time-Stepping Mode**: Added a `time_stepping` parameter (`"adaptive"` or `"fixed"`) to the `Simulation` class, allowing users to bypass adaptive truncation error checks for faster, predictable constant-step integration.
 - **Collision Toggling**: Added an `enable_collisions` boolean flag to `Simulation`. Disabling it skips the `CollisionSystem` initialization and per-step checks entirely, optimizing pure N-body gravity simulations.

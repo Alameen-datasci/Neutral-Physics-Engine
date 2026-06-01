@@ -95,33 +95,32 @@ struct Node
 // Octree
 class Octree {
     private:
-        const std::vector<double>& masses;     // list of masses [lenght N]
-        const std::vector<vec3>& pos;          // positon matrix [Nx3]
+        const double* masses;     // Pointer to Numpy masses array [N]
+        const vec3* pos;          // Pointer to Numpy N x 3 pos array (cast to vec3)
         std::unique_ptr<Node> root;
-        const std::optional<std::reference_wrapper<const std::vector<double>>> radii;
+        size_t num_bodies;          // Number of bodies (size of masses and pos arrays)
+        // const std::optional<std::reference_wrapper<const std::vector<double>>> radii;
+        const double* radii;         // Pointer to Numpy radii array [N], optional (can be nullptr)
         double theta = 0.5;
         std::vector<std::pair<int, int>> collision_pairs;
 
     public:
         //Constructor
         Octree(
-            const std::vector<double>& masses_,
-            const std::vector<vec3>& pos_,
-            const std::optional<std::vector<double>>& radii_ = std::nullopt,
+            const double* masses_,
+            const vec3* pos_,
+            const size_t num_bodies_,
+            const double* radii_ = nullptr,
             const double theta_ = 0.5
-        ) : masses(masses_), pos(pos_), radii(radii_), theta(theta_)
+        ) : masses(masses_), pos(pos_), num_bodies(num_bodies_), radii(radii_), theta(theta_)
         {
-            if (pos_.empty()) {
-                throw std::invalid_argument("Cannot build octree: positions array must contain at least one body.");
+            if (num_bodies == 0 || pos == nullptr) {
+                throw std::invalid_argument("Cannot build octree: positions array is empty or null.");
             }
+        }
 
-            if (masses.size() != pos.size()) {
-                throw std::invalid_argument("Masses and Positions array must have the same lenght.");
-            }
-
-            if (radii && radii->get().size() != masses.size()) {
-                throw std::invalid_argument("Radii array must have the same lenght as position array");
-            }
+        const Node* get_root() const {
+            return root.get();
         }
 
         // build(): building the octree
@@ -130,7 +129,7 @@ class Octree {
             double xmin = pos[0].x, ymin = pos[0].y, zmin = pos[0].z;
             double xmax = pos[0].x, ymax = pos[0].y, zmax = pos[0].z;
 
-            for (size_t i = 1; i < pos.size(); i++) {
+            for (size_t i = 1; i < num_bodies; i++) {
                 const auto& p = pos[i];
 
                 if (p.x < xmin) xmin = p.x;
@@ -151,7 +150,7 @@ class Octree {
             root = std::make_unique<Node>(center, half_side);
 
             // insert bodies
-            for (size_t i = 0; i < masses.size(); i++) {
+            for (size_t i = 0; i < num_bodies; i++) {
                 insert(i);
             }
         }
@@ -205,7 +204,7 @@ class Octree {
             vec3 tree_acc = compute_acceleration(i);
             vec3 direct_acc{0.0, 0.0, 0.0};
 
-            for (size_t j = 0; j < masses.size(); j++) {
+            for (size_t j = 0; j < num_bodies; j++) {
                 if (static_cast<size_t>(i) == j) continue;
 
                 double dx = pos[j].x - pos[i].x, dy = pos[j].y - pos[i].y, dz = pos[j].z - pos[i].z;
@@ -244,7 +243,7 @@ class Octree {
 
             collision_pairs.clear();
 
-            for (size_t i = 0; i < masses.size(); i++) {
+            for (size_t i = 0; i < num_bodies; i++) {
                 traverse_for_collisions(root.get(), i);
             }
 
@@ -270,7 +269,7 @@ class Octree {
             node->mass = new_mass;
 
             if (radii) {
-                node->max_radius = std::max(node->max_radius, radii->get()[i]);
+                node->max_radius = std::max(node->max_radius, radii[i]);
             }
 
             // case one: Empty Leaf
@@ -343,7 +342,7 @@ class Octree {
             if (!node) return;
 
             const vec3& p_i = pos[i];
-            double r_i = radii->get()[i];
+            double r_i = radii[i];
 
             double dist = point_to_node_distance(node, p_i);
 
@@ -358,7 +357,7 @@ class Octree {
                     double dx = p_i.x - pos[j].x, dy = p_i.y - pos[j].y, dz = p_i.z - pos[j].z;
                     
                     double distance = std::sqrt(dx*dx + dy*dy + dz*dz);
-                    double radius_sum = r_i + radii->get()[j];
+                    double radius_sum = r_i + radii[j];
 
                     if (distance < radius_sum) {
                         if (i < j) collision_pairs.emplace_back(i, j);

@@ -20,7 +20,9 @@ def test_octree_build_and_com():
     # The total mass should be the sum of the individual masses
     assert tree.root.mass == 2.0
     # The center of mass for two equal masses at symmetric positions should be at the origin
-    np.testing.assert_array_equal(tree.root.com, np.array([0.0, 0.0, 0.0]))
+    assert tree.root.com.x == 0.0
+    assert tree.root.com.y == 0.0
+    assert tree.root.com.z == 0.0
 
 
 def test_octree_point_mass_acceleration():

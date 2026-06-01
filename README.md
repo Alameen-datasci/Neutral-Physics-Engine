@@ -129,8 +129,8 @@ neutral-physics-engine/
 │       ├── gravity_field.py
 │       ├── integrators.py
 │       ├── io.py
-|       ├── octree.cpp
-|       ├── pybind11_wrapper.cpp
+│       ├── octree.cpp
+│       ├── pybind11_wrapper.cpp
 │       ├── octree_legacy.py
 │       └── simulation.py
 │
@@ -150,7 +150,7 @@ The engine provides several ODE solvers to balance computational cost with mathe
 - **Adaptive Stepping:** Uses step-doubling (Richardson extrapolation) to estimate local truncation errors. If the error exceeds the defined tolerances, the step is rejected, and Δt is dynamically shrunken to maintain strict error bounds.
 ## Performance Engineering
 To handle dense N-body simulations, the engine relies on several optimization strategies:
-- **Native C++ Barnes-Hut Octree:** Replaced the pure-Python O(N log N) tree traversal with a C++17 backend mapped via Pybind11. This eliminates Python interpreter overhead in the innermost loops, yielding up to a 16,000x execution speedup for spatial partitioning.
+- **Native C++ Barnes-Hut Octree:** Replaced the pure-Python O(N log N) tree traversal with a C++17 backend mapped via Pybind11. This eliminates Python interpreter overhead in the innermost loops, yielding drastic execution speedups and scaling far more efficiently for spatial partitioning.
 - **Hardware-Optimized Compilation:** The `setup.py` script dynamically detects the host operating system and injects aggressive compiler flags (e.g., `-O3`, `-ffast-math`, `-march=native`) to unlock CPU-specific vectorization and architecture optimizations during the initial pip install.
 - **Barnes-Hut Octree:** Replaces the O(N^2) direct summation of gravitational forces with an O(NlogN) tree traversal, controlled by an adjustable multiplexing parameter (`theta`).
 - **Memory Footprint:** Heavy use of `__slots__` on foundational classes (`Body`, `Node`) prevents dictionary allocation overhead, drastically reducing RAM usage and improving cache locality for millions of reads.

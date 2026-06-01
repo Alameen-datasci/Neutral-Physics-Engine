@@ -13,8 +13,24 @@
 
 namespace py = pybind11;
 
-// Define the Python module name (octree_ext)
+// Define the Python module name
 PYBIND11_MODULE(octree, m) {
+
+    py::class_<vec3>(m, "vec3")
+        .def_readonly("x", &vec3::x)
+        .def_readonly("y", &vec3::y)
+        .def_readonly("z", &vec3::z);
+
+    // Expose the Node struct
+    py::class_<Node>(m, "Node")
+        .def_readonly("mass", &Node::mass)
+        .def_readonly("center", &Node::center)
+        .def_readonly("half_side", &Node::half_side)
+        .def_readonly("com", &Node::com)
+        .def_readonly("body_index", &Node::body_index)
+        .def_readonly("max_radius", &Node::max_radius);
+
+
     py::class_<Octree>(m, "Octree")
 
     /**
@@ -30,39 +46,32 @@ PYBIND11_MODULE(octree, m) {
         double theta) {
             // Request access to the raw memory buffers of the NumPy arrays
             auto buf_mass = masses_in.request();
-            auto buf_pos = pos_in.request();
 
             // Determine the number of bodies (N) using size_t to prevent signed/unsigned warnings
             size_t N = static_cast<size_t>(buf_mass.shape[0]);
 
             // Extract typed pointers to the start of the memory buffers
-            double* ptr_mass = static_cast<double*>(buf_mass.ptr);
-            double* ptr_pos = static_cast<double*>(buf_pos.ptr);
+            const double* ptr_mass = static_cast<const double*>(buf_mass.ptr);
+            const double* raw_ptr_pos = static_cast<const double*>(pos_in.request().ptr);
 
-            // Construct the masses vector directly from the memory pointer
-            std::vector<double> masses(ptr_mass, ptr_mass + N);
+            // Tell C++ to view the raw double array as an array of vec3s
+            const vec3* ptr_pos = reinterpret_cast<const vec3*>(raw_ptr_pos);
 
-            // Manually unpack the flattened (N*3) position array into a vector of vec3 structs
-            std::vector<vec3> positions;
-            positions.reserve(N); // Pre-allocate memory for speed
-            for (size_t i = 0; i < N; i++) {
-                positions.push_back({ptr_pos[i*3], ptr_pos[i*3 + 1], ptr_pos[i*3 + 2]});
-            }
-
-            // Handle optional radii array for collision detection
-            std::optional<std::vector<double>> radii_opt = std::nullopt;
+            // Handle optional radii
+            const double* ptr_radii = nullptr;
             if (radii_in) {
-                auto buf_radii = radii_in->request();
-                double* ptr_radii = static_cast<double*>(buf_radii.ptr);
-                radii_opt = std::vector<double>(ptr_radii, ptr_radii + N);
+                ptr_radii = static_cast<const double*>(radii_in->request().ptr);
             }
 
-            return std::make_unique<Octree>(masses, positions, radii_opt, theta);
+            // Pass pointers directly
+            return std::make_unique<Octree>(ptr_mass, ptr_pos, N, ptr_radii, theta);
         }),
         py::arg("masses"),
         py::arg("pos"),
         py::arg("radii") = py::none(), // Optional argument with default value of None
         py::arg("theta") = 0.5) // Default value for theta
+
+        .def_property_readonly("root", &Octree::get_root, "Get the root node of the octree")
 
         // Expose standard methods directly to Python
         .def("build", &Octree::build, "Build the octree from the current position state.")
